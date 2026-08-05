@@ -3,9 +3,9 @@
   Heddled
 </h1>
 
-A self-hostable agent platform where **building, debugging, operating and evaluating** an agent are all views on the same event stream.
+**A self-hosted AI agent platform whose agents you review in a pull request.**
 
-Easy enough to ship an agent in an afternoon, powerful enough to run a fleet in production. No SPA, no build step, no message broker — Python, Flask and SQLite.
+Every agent, tool and policy is a file in your repository. The console is a view over those same files and writes them back comment-preserving — so a change to what your AI is allowed to do arrives as a diff a person would have written, and goes through the review you already have.
 
 [![CI](https://github.com/heddled/heddled/actions/workflows/ci.yml/badge.svg)](https://github.com/heddled/heddled/actions/workflows/ci.yml)
 [![Python 3.10+](https://img.shields.io/badge/python-3.10%2B-blue)](https://www.python.org/downloads/)
@@ -13,10 +13,24 @@ Easy enough to ship an agent in an afternoon, powerful enough to run a fleet in 
 
 [**heddled.com**](https://heddled.com) · [**Documentation**](https://heddled.com/docs.html)
 
+Somebody ticked a box in the browser to gate an action behind approval. This is the whole diff:
+
 <picture>
-  <source media="(prefers-color-scheme: dark)" srcset="docs/console-dark.webp">
-  <img src="docs/console-light.webp" alt="A conversation written out in plain words: someone asks whether an invoice was paid, the agent uses a lookup tool, gets back the status and amount, and replies with the details.">
+  <source media="(prefers-color-scheme: dark)" srcset="docs/diff-dark.webp">
+  <img src="docs/diff-light.webp" alt="git diff on an agent file showing two added lines that gate the create_ticket action behind approval. Nothing else in the file changed — comments, key order and formatting are exactly as they were written.">
 </picture>
+
+No database to export, no proprietary format, nothing to get locked into. Branch it, review it, revert it, `git blame` it.
+
+---
+
+## Why
+
+Low-code builders are approachable until you need real tools, real visibility, or a human in the loop — and your work ends up inside their database, exportable only as a JSON blob nobody would hand-author. Code frameworks give you files but hand you a library, not a product: you build the console, the traces, the approval flow and the operator experience yourself, every time.
+
+Heddled takes both halves seriously. **Files are the source of truth** — and the UI is a real authoring surface over them, not a separate system that owns your configuration.
+
+Underneath, there is **one spine**: a structured event stream every turn flows through. Everything else is either an **adapter** (moves messages in and out — tools and channels alike) or a **consumer** (observes the stream — trace viewer, console, eval runner). Because resumption reads the same log the audit reads, "what happened" and "what happens next" cannot drift apart.
 
 ```
 heddled dev                                          # console + live trace pane
@@ -24,13 +38,7 @@ heddled chat support "where is invoice F-2231?"      # one scripted turn
 heddled tool test lookup_invoice --args '{"invoice_number":"F-2231"}'
 ```
 
----
-
-## Why
-
-Low-code builders are approachable until you need real tools, real visibility, or a human in the loop. Code frameworks are powerful but hand you a library, not a product — you build the console, the traces, the deployment story and the operator experience yourself, every time.
-
-Heddled has **one spine**: a structured event stream every turn flows through. Everything else is either an **adapter** (moves messages in/out — tools and channels alike) or a **consumer** (observes the stream — trace viewer, console, eval runner). When the spine is right, the features bolted on elsewhere fall out naturally here.
+Built for a small team with real systems to connect to: one container, SQLite, no SPA, no build step, no message broker. Not a multi-tenant SaaS, and not trying to be.
 
 ## Install
 
@@ -120,9 +128,11 @@ def handle(args, ctx):
     return {"status": "unpaid", "amount_eur": 249.0}
 ```
 
-## Authoring
+## Authoring — a UI that does not own your files
 
-You never have to write that first YAML file by hand. Both surfaces call the same scaffolds, so they cannot drift:
+This is the part most platforms get wrong in one direction or the other, so it is worth being precise about what is claimed.
+
+Both surfaces call the same scaffolds, so they cannot drift:
 
 ```bash
 heddled new agent support --model anthropic/claude-sonnet-4-6
@@ -139,6 +149,8 @@ Saving writes the file, and only the file:
 - Validation runs *before* the file is touched; a rejected save returns your text with the reason, never a half-written file.
 - Anything the form can't represent faithfully (anchors, merge keys) is detected, and the form goes read-only rather than silently dropping it.
 - Deleting warns about what depends on it first — the Tools screen shows every agent a change would reach, because the registry is global.
+
+The mechanism is a ruamel round-trip plus one extra step: any line whose content is unchanged once whitespace is ignored keeps exactly how it was written, so the serialiser's own cosmetic preferences never show up as diff noise on lines you did not touch. Raw-tab saves write your text verbatim.
 
 Because the registry re-reads from disk, a change is live on the next turn. No restart, no deploy step.
 
@@ -170,6 +182,11 @@ operator.injected · message.sent · turn.completed · error.raised
 ```
 
 Each carries `session_id`, `turn_id`, `agent_version` and a monotonic sequence number. Because the exact model context is captured in `context.built`, you can replay any turn against a modified agent version and diff the behaviour. The audit log isn't a feature — it's a query.
+
+<picture>
+  <source media="(prefers-color-scheme: dark)" srcset="docs/console-dark.webp">
+  <img src="docs/console-light.webp" alt="A conversation written out in plain words: someone asks whether an invoice was paid, the agent uses a lookup tool, gets back the status and amount, and replies with the details.">
+</picture>
 
 One trace-view component is reused in four places: the dev harness, live sessions (over SSE), historical replay, and eval diffs. `j`/`k` step events, `Enter` expands, and `/sessions/<id>#e-1234` addresses a single event.
 
