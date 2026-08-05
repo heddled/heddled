@@ -1,0 +1,69 @@
+{#
+  The trace view — one component, four contexts (dev harness, live session,
+  replay, eval diff). If this is good, the whole console is good.
+
+  Params: events, live (bool), stream_url (optional), compare_events (optional)
+#}
+<div class="trace {% if compare_events %}diff{% endif %}" id="trace"
+     data-live="{{ '1' if live else '0' }}"
+     data-stream="{{ stream_url or '' }}">
+
+  <div class="timeline-pane">
+    <div class="pane-head">
+      <span>Timeline</span>
+      <span class="pane-tools">
+        <input type="search" id="trace-filter" placeholder="filter events…" autocomplete="off"
+               aria-label="Filter what happened">
+        {% if live %}<span class="live-dot" title="streaming over SSE"></span>live{% endif %}
+      </span>
+    </div>
+    {% if not events %}
+    <p class="pane-empty" id="timeline-empty">
+      {% if live %}Each step the agent takes appears here as it happens.
+      {% else %}Nothing was recorded for this conversation.{% endif %}
+    </p>
+    {% endif %}
+    <ol class="timeline" id="timeline">
+      {% for e in events %}
+      <li class="ev {{ event_class.get(e.type, '') }}" id="e-{{ e.seq }}"
+          data-seq="{{ e.seq }}" data-type="{{ e.type }}"
+          data-payload="{{ e.payload | tojson | forceescape }}"
+          data-ts="{{ e.ts }}" data-turn="{{ e.turn_id or '' }}">
+        <span class="ev-seq">{{ e.seq }}</span>
+        <span class="ev-type">{{ e.type }}</span>
+        <span class="ev-summary">{{ e.summary }}</span>
+        <span class="ev-time">{{ e.ts | clock }}</span>
+      </li>
+      {% endfor %}
+    </ol>
+  </div>
+
+  {% if compare_events %}
+  <div class="timeline-pane compare">
+    <div class="pane-head"><span>Compare: {{ compare[:12] }}…</span></div>
+    <ol class="timeline" id="timeline-compare">
+      {% for e in compare_events %}
+      <li class="ev {{ event_class.get(e.type, '') }}" data-seq="{{ e.seq }}"
+          data-type="{{ e.type }}" data-payload="{{ e.payload | tojson | forceescape }}">
+        <span class="ev-seq">{{ loop.index }}</span>
+        <span class="ev-type">{{ e.type }}</span>
+        <span class="ev-summary">{{ e.summary }}</span>
+      </li>
+      {% endfor %}
+    </ol>
+  </div>
+  {% endif %}
+
+  <div class="detail-pane">
+    <div class="pane-head">
+      <span id="detail-title">Detail</span>
+      <span class="pane-tools" title="Keyboard: j and k move between steps, Enter expands">
+        <kbd>j</kbd><kbd>k</kbd> move <kbd>Enter</kbd> expand</span>
+    </div>
+    <div id="detail" class="detail">
+      <p class="pane-empty">Pick a step on the left to see exactly what was sent
+        and what came back.</p>
+    </div>
+  </div>
+</div>
+<script src="{{ url_for('static', filename='trace.js') }}"></script>

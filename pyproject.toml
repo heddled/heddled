@@ -1,0 +1,64 @@
+[build-system]
+requires = ["setuptools>=68"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "heddled-agents"
+version = "0.1.0"
+description = "A self-hostable agent platform where building, debugging, operating and evaluating an agent are all views on the same event stream."
+readme = "README.md"
+requires-python = ">=3.10"
+license = { text = "Apache-2.0" }
+authors = [{ name = "Ralph Barendse" }]
+keywords = ["agents", "llm", "mcp", "observability", "self-hosted"]
+classifiers = [
+    "Development Status :: 3 - Alpha",
+    "Intended Audience :: Developers",
+    "License :: OSI Approved :: Apache Software License",
+    "Programming Language :: Python :: 3",
+    "Topic :: Software Development :: Libraries :: Application Frameworks",
+]
+
+# A deliberately short list. Everything else is stdlib, so a self-hosted
+# install stays boring (concept principle 5); each entry below earns its place
+# by doing something that would be a mistake to hand-roll.
+dependencies = [
+    "flask>=2.0",
+    "requests>=2.28",
+    "PyYAML>=6.0",
+    # Comment-preserving YAML round-trip for the authoring surface (decision 9):
+    # safe_load discards comments, so a form built on it would silently delete them.
+    "ruamel.yaml>=0.18",
+    # Decision 4's zstd for stored context. Declared rather than optional so the
+    # event store is encoded identically on every machine — a data/ directory
+    # written on a laptop must be readable inside the container. Drops away on
+    # 3.14, where zstd is stdlib (`compression.zstd`).
+    "zstandard>=0.22; python_version < '3.14'",
+]
+
+[project.optional-dependencies]
+dev = ["pytest>=7.4"]
+
+[project.scripts]
+heddled = "heddled.cli:main"
+
+[project.urls]
+Homepage = "https://github.com/rbarendse/heddled"
+
+[tool.setuptools.packages.find]
+include = ["heddled*"]
+
+[tool.setuptools.package-data]
+# `web/static/*` matches the top level only, so anything in a subdirectory —
+# brand/, fonts/, images/ — was silently missing from the installed package and
+# 404'd at runtime while working perfectly from a source checkout.
+heddled = [
+    "web/templates/*.html",
+    "web/templates/**/*.html",
+    "web/static/*",
+    "web/static/**/*",
+]
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+filterwarnings = ["ignore::DeprecationWarning"]

@@ -1,0 +1,120 @@
+{% extends "base.html" %}
+{% block title %}Tests · Heddled{% endblock %}
+{% block body %}
+<h1>Tests</h1>
+<p class="lede">Save a conversation that went well, and Heddled can replay it against your
+  agent later. Change the instructions, run the tests, and see straight away whether
+  anything you relied on has broken.</p>
+
+{% if not goldens %}
+<div class="onboard">
+  <h2>No saved conversations yet</h2>
+  <p>Here's how this works:</p>
+  <ol class="steps">
+    <li>Chat with an agent until it does something right.</li>
+    <li>Open that conversation under <a href="/sessions">Activity</a> and press
+      <b>Save as a test</b>.</li>
+    <li>Come back here after you change the agent, and press <b>Run tests</b>.</li>
+  </ol>
+  <p class="muted">Replays never touch the outside world — tools give back exactly what
+    they gave back the first time, so running tests can't send a real email or move
+    real money.</p>
+</div>
+{% endif %}
+
+<div class="cols">
+  <section class="card">
+    <h2>Saved conversations</h2>
+    <table class="grid tight">
+      <thead><tr><th>Name</th><th>Agent</th><th>Saved</th><th>From</th><th></th></tr></thead>
+      <tbody>
+      {% for g in goldens %}
+        <tr>
+          <td>{{ g['name'] }}</td>
+          <td class="small">{{ g['agent'] }}</td>
+          <td class="small muted">{{ g['created_at'] | ago }}</td>
+          <td class="small">
+            {% if g['session_id'] %}<a href="/sessions/{{ g['session_id'] }}">the original</a>{% endif %}</td>
+          <td><button class="btn tiny danger" onclick="delGolden('{{ g['id'] }}')">remove</button></td>
+        </tr>
+      {% else %}<tr><td colspan="5" class="muted">Nothing saved yet.</td></tr>{% endfor %}
+      </tbody>
+    </table>
+  </section>
+
+  <section class="card">
+    <h2>Run them</h2>
+    <div class="row">
+      <select id="eval-agent" aria-label="Which agent to test">
+        {% for a in agents %}
+        <option value="{{ a.name }}" data-tests="{{ a.tests }}"
+                {{ 'disabled' if not a.tests }}>{{ a.name }}{% if a.tests %}
+          — {{ a.tests }} test{{ '' if a.tests == 1 else 's' }}{%
+          else %} — nothing saved yet{% endif %}</option>
+        {% endfor %}
+      </select>
+      <button class="btn primary" id="run-tests" onclick="runEvals()"
+              {{ 'disabled' if not any_testable }}>Run tests</button>
+    </div>
+    {% if any_testable %}
+    <p class="muted small">Replays every saved conversation for that agent and reports
+      what changed.</p>
+    {% else %}
+    <p class="hint">Nothing to run yet. Save a conversation as a test first — open one
+      under <a href="/sessions">Activity</a> and press <b>Save as a test</b>.</p>
+    {% endif %}
+  </section>
+</div>
+
+<section class="card">
+  <h2>Results</h2>
+  <table class="grid">
+    <thead><tr><th>Agent</th><th>Outcome</th><th>Passed</th><th>Failed</th>
+      <th>When</th><th></th></tr></thead>
+    <tbody>
+    {% for r in runs %}
+      <tr>
+        <td>{{ r['agent'] }}</td>
+        <td><span class="status {{ 'ended' if r['status'] == 'passed'
+                                   else ('running running-eval' if r['status'] == 'running'
+                                         else 'error') }}">
+          {{ 'all good' if r['status'] == 'passed' else
+             ('running…' if r['status'] == 'running' else 'something changed') }}</span></td>
+        <td>{{ r['passed'] }}</td><td>{{ r['failed'] }}</td>
+        <td class="small muted">{{ r['started_at'] | ago }}</td>
+        <td><a class="btn tiny" href="/evals/runs/{{ r['id'] }}">look</a></td>
+      </tr>
+    {% else %}<tr><td colspan="6" class="muted">Not run yet.</td></tr>{% endfor %}
+    </tbody>
+  </table>
+</section>
+{% endblock %}
+
+{% block scripts %}
+<script>
+async function runEvals() {
+  const agent = document.getElementById('eval-agent').value;
+  const r = await fetch(`/api/agents/${agent}/evals/run`, {method:'POST',
+    headers:{'content-type':'application/json'}, body:'{}'});
+  const d = await r.json();
+  if (d.run_id) setTimeout(() => location.href = `/evals/runs/${d.run_id}`, 600);
+  else alert(d.error || 'Could not start the tests.');
+}
+async function delGolden(id) {
+  if (!confirm('Remove this saved conversation? The original chat is kept.')) return;
+  await fetch(`/api/goldens/${id}`, {method:'DELETE'});
+  location.reload();
+}
+
+// A run that is still going used to sit at "running…" until somebody thought to
+// reload. It finishes on its own, so the page should notice.
+if (document.querySelector('.status.running-eval')) {
+  const tick = setInterval(async () => {
+    const r = await fetch('/api/evals/runs?limit=1');
+    if (!r.ok) return clearInterval(tick);
+    const d = await r.json();
+    if (d.runs && d.runs.length && d.runs[0].status !== 'running') location.reload();
+  }, 3000);
+}
+</script>
+{% endblock %}

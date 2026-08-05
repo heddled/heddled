@@ -1,0 +1,14 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 64 64" fill="none"
+     stroke-linecap="square" role="img" aria-label="Heddled">
+  <title>Heddled</title>
+  <!-- Below 24px the weave simplifies: fewer threads, heavier stroke, and the
+       node becomes solid rather than an outline that would fill in. -->
+  <g stroke="currentColor" stroke-width="7.5">
+    <path d="M18 6 V26 M18 38 V58"/>
+    <path d="M46 6 V26 M46 38 V58"/>
+    <path d="M6 18 H26 M38 18 H58"/>
+    <path d="M6 50 H26 M38 50 H58"/>
+  </g>
+  <path d="M6 34 H34" stroke="#B4442E" stroke-width="7.5"/>
+  <circle cx="48" cy="34" r="6.5" fill="#B4442E"/>
+</svg>

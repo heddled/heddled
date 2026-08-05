@@ -1,0 +1,702 @@
+{% extends "base.html" %}
+{% block title %}{{ agent.name }} · Heddled{% endblock %}
+{% block body %}
+
+<div class="page-head">
+  <div>
+    <h1>{{ agent.name }}
+      {# Next to the name, because that is where you look when the name is
+         wrong — not in a settings panel three sections down. #}
+      <details class="rename">
+        <summary title="Rename this agent">Rename</summary>
+        <div class="rename-panel">
+          <form method="post" action="/agents/{{ agent.name }}/rename"
+                data-confirm="Rename {{ agent.name }}?{% if delegates
+                %} {{ delegates | join(' and ') }} will be pointed at the new name.{% endif %}">
+            <input name="new_name" value="{{ agent.name }}" class="mono" required
+                   pattern="[a-z][a-z0-9_]*" aria-label="New name"
+                   title="lowercase letters, digits and underscores">
+            <button class="btn" type="submit">Rename</button>
+          </form>
+          <p class="hint">Conversations, tests and schedules come with it.
+            {% if delegates %}<b>{{ delegates | join(' and ') }}</b> will be pointed at
+            the new name too.{% endif %}
+            {% if agent.expose.get('mcp') %}Its address changes to
+            <code>/mcp/&lt;new name&gt;</code>, so anything calling it from outside
+            needs the new one.{% endif %}</p>
+        </div>
+      </details>
+    </h1>
+    <p class="muted">{{ agent.description or 'No description yet.' }}</p>
+  </div>
+  <div class="page-actions">
+    <a class="btn primary" href="/agents/{{ agent.name }}/test">Try it</a>
+  </div>
+</div>
+
+{% if error %}<div class="banner bad">{{ error }}</div>{% endif %}
+{% if renamed_from %}
+<div class="banner ok"><p>Renamed from <b>{{ renamed_from }}</b>.
+  {% if repointed %}{{ repointed | join(' and ') }}
+  now point{{ '' if repointed | length > 1 else 's' }} at the new name.{% endif %}</p></div>
+{% endif %}
+{% if saved %}<div class="banner ok">Saved{% if committed %} · committed
+  <code>{{ committed }}</code>{% endif %}</div>{% endif %}
+{% if restored %}
+<div class="banner ok"><p>Version <span class="mono">{{ restored }}</span> is back —
+  it is what you are editing now. Anything published stays as it was until you
+  publish again.</p></div>
+{% endif %}
+
+{% if not model_service.ready %}
+<div class="banner warn">
+  <p>
+  {% if model_service.known %}
+  This agent runs on <b>{{ model_service.label }}</b>, and there is no
+  {{ model_service.label }} key yet — it will stop on its first turn.
+  <a href="/settings">Add one under Settings</a>, or change the model below.
+  {% else %}
+  Heddled doesn't recognise <code>{{ model_service.provider }}</code> as a model
+  service, so this agent has nothing to run on. Pick a model below, or set
+  <code>{{ model_service.provider }}_base_url</code> under
+  <a href="/settings">Settings</a> if it speaks the OpenAI API.
+  {% endif %}
+  </p>
+</div>
+{% endif %}
+
+{% if unrepresentable %}
+<div class="banner warn">
+  This agent's file uses {{ unrepresentable | join(', ') }}, which the simple forms
+  can't show without risking losing it. Everything below is read-only —
+  use <b>The file itself</b> at the bottom to make changes.
+</div>
+{% endif %}
+
+<div class="quick-facts">
+  <div><span class="qf-label">Model</span>{{ agent.model }}
+    {% if not model_service.ready %}<span class="badge bad">no key</span>{% endif %}</div>
+  <div><span class="qf-label">Can do</span>{{ tools | length }} thing{{ 's' if tools | length != 1 }}</div>
+  <div><span class="qf-label">Checks with you</span>
+    {{ gated | length }} of them</div>
+  <div><span class="qf-label">Chats</span>
+    <a href="/sessions?agent={{ agent.name }}">{{ sessions | length }} recent</a></div>
+  <div><span class="qf-label">Version</span>
+    <a href="#versions" title="see earlier versions and put one back">{{
+      agent.short_version }}{% if versions | length > 1 %}
+      <span class="muted">· {{ versions | length }} kept</span>{% endif %}</a></div>
+</div>
+
+<!-- ------------------------------------------------------ how it behaves -->
+<section class="card">
+  <h2>How it behaves</h2>
+  <p class="muted small">This is what the agent is told before every conversation.
+    Write it like you're briefing a colleague.</p>
+  <form method="post" action="/agents/{{ agent.name }}/definition">
+    <textarea name="instructions" class="prose" rows="14" aria-label="Instructions for this agent"
+              spellcheck="true">{{ agent.instructions }}</textarea>
+    <div class="row"><button class="btn primary" type="submit">Save</button></div>
+  </form>
+</section>
+
+<!-- --------------------------------------------------------- what it can do -->
+<section class="card">
+  <div class="pane-head">
+    <h2>What it can do</h2>
+    <a class="btn tiny" href="/tools/new">+ Make a new tool</a>
+  </div>
+  {% if not all_tools %}
+  <p class="muted">There are no tools yet. An agent with none can still answer from its
+    instructions — <a href="/tools/new">make its first tool</a> when you're ready.</p>
+  {% else %}
+  <p class="muted small">Tick what this agent is allowed to use. It works out for itself
+    when each one is needed.</p>
+  <form method="post" action="/agents/{{ agent.name }}/mounted">
+    <input type="hidden" name="submitted" value="1">
+    <fieldset class="plain" {% if unrepresentable %}disabled{% endif %}>
+      {# What it can do already is the answer to the question people actually
+         arrive with. The full list is the place you go to change that, so it
+         comes second — and, past a handful, folded and searchable. #}
+      <div class="chosen" id="mount-tools-chosen" data-chosen-for="#mount-tools"
+           data-empty="Nothing yet — it can only answer from its instructions."></div>
+
+      <details class="picker" {{ 'open' if all_tools | length <= 8 }}>
+        <summary><span class="picker-verb">Change what it can do</span>
+          <span class="muted small">{{ all_tools | length }} to choose from</span></summary>
+        {% if all_tools | length > 8 %}
+        <div class="list-filter">
+          <label class="sr-only" for="tool-filter">Find a tool</label>
+          <input id="tool-filter" type="search" placeholder="Find a tool…"
+                 autocomplete="off" data-filters="#mount-tools" data-filter-count="#tool-count">
+          <label class="check inline"><input type="checkbox" data-filter-ticked="#mount-tools">
+            <span>only what's ticked</span></label>
+          <span id="tool-count" class="muted small"></span>
+        </div>
+        {% endif %}
+        <ul class="checks {{ 'scroll' if all_tools | length > 12 }}" id="mount-tools">
+          {% for name, tool in all_tools.items() %}
+          <li>
+            <label class="check">
+              <input type="checkbox" name="tools" value="{{ name }}"
+                     {{ 'checked' if name in mounted.tools }}>
+              <span><b>{{ name.replace('_', ' ') }}</b>
+                <span class="muted small">{{ tool.description }}</span></span>
+            </label>
+            <a class="story-jump always" href="/tools/{{ name }}">open</a>
+          </li>
+          {% endfor %}
+        </ul>
+      </details>
+
+      {% if other_agents %}
+      <h3>Hand work to another agent</h3>
+      <p class="hint">A specialist agent can be given to this one like any other
+        capability. It gets the question, does its own work, and hands back an answer —
+        and you can follow both halves under Activity.</p>
+      <div class="chosen" id="mount-agents-chosen" data-chosen-for="#mount-agents"
+           data-empty="None — it does everything itself."></div>
+      <details class="picker" {{ 'open' if other_agents | length <= 8 }}>
+        <summary><span class="picker-verb">Choose specialists</span>
+          <span class="muted small">{{ other_agents | length }} to choose from</span></summary>
+        {% if other_agents | length > 8 %}
+        <div class="list-filter">
+          <label class="sr-only" for="agent-filter">Find an agent</label>
+          <input id="agent-filter" type="search" placeholder="Find an agent…"
+                 autocomplete="off" data-filters="#mount-agents"
+                 data-filter-count="#agent-count">
+          <label class="check inline"><input type="checkbox" data-filter-ticked="#mount-agents">
+            <span>only what's ticked</span></label>
+          <span id="agent-count" class="muted small"></span>
+        </div>
+        {% endif %}
+        <ul class="checks {{ 'scroll' if other_agents | length > 12 }}" id="mount-agents">
+          {% for other in other_agents %}
+          <li><label class="check">
+            <input type="checkbox" name="agents" value="{{ other }}"
+                   {{ 'checked' if other in mounted.agents }}>
+            <span><b>{{ other }}</b></span></label>
+            <a class="story-jump always" href="/agents/{{ other }}">open</a>
+          </li>
+          {% endfor %}
+        </ul>
+      </details>
+      {% endif %}
+
+      <div class="row"><button class="btn primary" type="submit">Save</button></div>
+    </fieldset>
+  </form>
+
+  <h3>Tools from another system</h3>
+  <p class="hint">If a system speaks MCP, everything it offers becomes available to this
+    agent at once — and your rules still apply to all of it.</p>
+  {% if mounted.mcp %}
+  <table class="grid tight">
+    <thead><tr><th>System</th><th>Address</th><th></th></tr></thead>
+    <tbody>
+    {% for server in mounted.mcp %}
+    <tr>
+      <td><b>{{ server.get('name', 'mcp') }}</b></td>
+      <td class="mono small muted">{{ server.get('url') }}</td>
+      <td>
+        <form method="post" action="/agents/{{ agent.name }}/mounted" class="inline">
+          <input type="hidden" name="remove_mcp" value="{{ server.get('name', 'mcp') }}">
+          <button class="btn tiny danger" type="submit">disconnect</button>
+        </form>
+      </td>
+    </tr>
+    {% endfor %}
+    </tbody>
+  </table>
+  {% endif %}
+  <form method="post" action="/agents/{{ agent.name }}/mounted" class="policy-form">
+    <input name="mcp_name" placeholder="a short name" aria-label="Name for this system">
+    <input name="mcp_url" class="mono" placeholder="https://example.com/mcp" required
+           aria-label="MCP address">
+    <input name="mcp_token" type="password" placeholder="token, if it needs one"
+           aria-label="Access token">
+    <button class="btn" type="submit">Connect</button>
+  </form>
+  <p class="hint">Heddled checks the connection before saving it, and tells you how many
+    tools it found.</p>
+  {% endif %}
+</section>
+
+<!-- ------------------------------------------------------------- approvals -->
+<section class="card">
+  <h2>What it checks with you first</h2>
+  <p class="muted small">Anything listed here pauses and waits for a person. Use it for
+    actions that spend money, reach customers, or can't be undone. You'll get a link —
+    you don't have to sit in this screen.</p>
+
+  {% if agent.policies %}
+  <table class="grid tight">
+    <thead><tr><th>Tool</th><th>Rule</th><th></th></tr></thead>
+    <tbody>
+    {% for p in agent.policies %}
+    <tr>
+      <td>{{ p.get('tool') | tool_words }}</td>
+      <td class="small">
+        {% if p.get('requires_approval') %}<span class="badge warn">asks you first</span>{% endif %}
+        {% if p.get('approval_callers') %}<span class="badge warn">asks you when
+          {{ p['approval_callers'] | join(', ') }} calls</span>{% endif %}
+        {% if p.get('budget', {}).get('max_eur_per_day') %}
+          <span class="badge">max €{{ p['budget']['max_eur_per_day'] }} a day</span>{% endif %}
+        {% if p.get('redact') %}<span class="badge">hides {{ p['redact'] | join(', ') }}</span>{% endif %}
+        {% if p.get('allow_channels') %}<span class="badge">only from
+          {{ p['allow_channels'] | join(', ') }}</span>{% endif %}
+        {% if p.get('rate_limit') %}<span class="badge">limited to
+          {{ p['rate_limit'].get('max_calls') }} per
+          {{ p['rate_limit'].get('per_seconds', 60) }}s</span>{% endif %}
+      </td>
+      <td>
+        <form method="post" action="/agents/{{ agent.name }}/policies" class="inline">
+          <input type="hidden" name="remove" value="{{ p.get('tool', '*') }}">
+          <button class="btn tiny danger" type="submit">remove</button>
+        </form>
+      </td>
+    </tr>
+    {% endfor %}
+    </tbody>
+  </table>
+  {% else %}
+  <p class="muted">Nothing — every tool runs without asking.</p>
+  {% endif %}
+
+  {% if all_tools %}
+  <form method="post" action="/agents/{{ agent.name }}/policies" class="policy-form">
+    <select name="tool" required aria-label="Which tool this rule is about">
+      <option value="">choose a tool…</option>
+      <option value="*">everything it can do</option>
+      {% for name in all_tools %}<option value="{{ name }}">{{ name.replace('_', ' ') }}</option>{% endfor %}
+    </select>
+    <label class="check"><input type="checkbox" name="requires_approval" checked> ask me first</label>
+    <input name="max_eur_per_day" type="number" step="any" placeholder="max € a day"
+           aria-label="Most it may spend on this in a day, in euros">
+    <input name="redact" placeholder="hide: iban, creditcard"
+           aria-label="Kinds of detail to hide from the record">
+    <button class="btn" type="submit">Add rule</button>
+  </form>
+  {% endif %}
+</section>
+
+<!-- -------------------------------------------------------------- triggers -->
+<section class="card">
+  <h2>When it acts on its own</h2>
+  <p class="muted small">An agent doesn't have to wait to be asked. These are the things
+    that start a conversation without anyone typing: a clock, a folder, or a mailbox.
+    Everything it does this way shows up under <a href="/sessions">Activity</a> like any
+    other conversation.</p>
+
+  {% if trigger_rows %}
+  <table class="grid tight">
+    <thead>
+      <tr><th>What sets it off</th><th>What it does</th><th>Last time</th><th></th></tr>
+    </thead>
+    <tbody>
+    {% for t in trigger_rows %}
+    <tr>
+      <td>
+        {% if t.cron %}
+        <b>{{ t.cron | cron_words }}</b>
+        <div class="muted small mono">{{ t.cron }}</div>
+        {% else %}
+        <b>{{ t.words }}</b>
+        <div class="muted small">looked at every {{ t.every }}</div>
+        {% endif %}
+      </td>
+      <td class="small">{{ t.spec.get('message') or t.spec.get('on_new') or '—' }}</td>
+      <td class="small muted">
+        {% if t.kind == 'schedule' %}{{ 'never yet' if not t.last_fired else t.last_fired }}
+        {% elif t.last_tick %}checked {{ t.last_tick | ago }}
+        {% else %}not checked yet{% endif %}
+        {% if t.error %}
+        <div class="bad-text small">{{ t.error.error }}</div>
+        {% endif %}
+      </td>
+      <td>
+        <form method="post" action="/agents/{{ agent.name }}/triggers" class="inline"
+              data-confirm="Stop this? {{ t.words if t.words else (t.cron | cron_words) }} will no longer start a conversation.">
+          <input type="hidden" name="remove" value="{{ loop.index0 }}">
+          <button class="btn tiny danger" type="submit">remove</button>
+        </form>
+      </td>
+    </tr>
+    {% endfor %}
+    </tbody>
+  </table>
+  {% else %}
+  <p class="muted">Nothing yet — it only acts when someone talks to it, or when another
+    system asks it to.</p>
+  {% endif %}
+
+  <form method="post" action="/agents/{{ agent.name }}/triggers" class="trigger-form"
+        id="trigger-form">
+    <div class="field-grid">
+      <label>What should set it off?
+        <select name="kind" id="trigger-kind">
+          <option value="schedule">A time of day or week</option>
+          <option value="folder">A file arriving in a folder</option>
+          <option value="email">An email arriving in a mailbox</option>
+        </select>
+      </label>
+
+      <label class="when-schedule">How often
+        <select name="when" id="trigger-when">
+          {% for key, entry in schedule_choices.items() %}
+          <option value="{{ key }}">{{ entry[0] }}</option>
+          {% endfor %}
+        </select>
+      </label>
+
+      <label class="when-schedule" id="at-field">At
+        <input type="time" name="at" value="08:00"></label>
+
+      <label class="when-schedule hidden" id="custom-field">Schedule
+        <input name="custom" class="mono" placeholder="0 8 * * 1-5"></label>
+
+      <label class="when-folder hidden">Watch this folder
+        <input name="path" class="mono" value="./var/mailbox"></label>
+
+      <label class="when-email hidden">Mail server
+        <input name="imap_host" class="mono" placeholder="imap.gmail.com"
+               value="{{ settings.get('imap_host', '') }}"></label>
+
+      <label class="when-email hidden">Sign in as
+        <input name="imap_user" class="mono" placeholder="invoices@yourcompany.com"
+               value="{{ settings.get('imap_user', '') }}"></label>
+
+      <label class="when-email hidden">Password
+        <input name="imap_password" type="password" autocomplete="new-password"
+               placeholder="{{ 'saved — type to replace' if settings.get('imap_password')
+                               else 'an app password, usually' }}"></label>
+
+      <label class="when-email hidden">Which folder
+        <input name="mailbox_folder" class="mono" value="INBOX"></label>
+
+      <label class="when-folder when-email hidden">Check every
+        <input name="every" class="mono" value="60s" placeholder="60s, 5m, 1h"></label>
+    </div>
+    <p class="hint when-email hidden">The mail server details are kept under Settings,
+      not in this agent's file — the file is meant to be shareable, a password is not.
+      Each new message starts one conversation, and Heddled remembers where it got to,
+      so nothing is handled twice.</p>
+    <p class="hint when-folder hidden">Anything dropped into that folder starts one
+      conversation. Good for a scanner, an export, or a colleague saving a file.</p>
+
+    <label>What should the agent do?
+      <textarea name="message" rows="2"
+        placeholder="Summarise yesterday's unpaid invoices and flag anything overdue."></textarea>
+    </label>
+    <p class="hint">This is sent to the agent as if someone had typed it. Every run shows
+      up under Activity like any other conversation.</p>
+
+    <div class="row"><button class="btn primary" type="submit">Add</button></div>
+  </form>
+</section>
+
+<!-- ------------------------------------------------------- ways in from outside -->
+<section class="card">
+  <h2>How other systems reach it</h2>
+  <p class="muted small">These need nothing set up here — they are addresses another
+    system can send to. Whether each one is open depends on what the agent is
+    <b>mounted on</b>, below under Settings and advanced.</p>
+  <table class="grid tight">
+    <thead><tr><th>Way in</th><th>Address</th><th>Open?</th></tr></thead>
+    <tbody>
+      <tr>
+        <td><b>A webhook</b>
+          <div class="muted small">Any system that can POST — a form, a CRM, Zapier.</div></td>
+        <td><code class="copyable" data-copy>{{ public_url }}/api/agents/{{ agent.name }}/webhook</code></td>
+        <td>{% if 'webhook' in channels %}<span class="badge ok">yes</span>
+          {% else %}<span class="muted small">mount <b>webhook</b> to open it</span>{% endif %}</td>
+      </tr>
+      <tr>
+        <td><b>Another AI assistant</b>
+          <div class="muted small">Anything that speaks MCP — Claude, Copilot Studio,
+            another Heddled.</div></td>
+        <td><code class="copyable" data-copy>{{ public_url }}/mcp/{{ agent.name }}</code></td>
+        <td>{% if agent.expose.get('mcp') %}<span class="badge ok">yes</span>
+          {% else %}<span class="muted small">tick <b>let other systems use it</b></span>{% endif %}</td>
+      </tr>
+      <tr>
+        <td><b>The chat window</b>
+          <div class="muted small">You, or anyone who can open this console.</div></td>
+        <td><a href="/agents/{{ agent.name }}/test">Try it</a></td>
+        <td><span class="badge ok">yes</span></td>
+      </tr>
+    </tbody>
+  </table>
+  <p class="hint">A program signs in with <code>Bearer &lt;username&gt;:&lt;password&gt;</code>,
+    or with an integration key set up under <a href="/settings">Settings</a>. Whatever
+    arrives this way is governed by the same rules as anything else — the approval
+    gates above still apply.</p>
+</section>
+
+<!-- --------------------------------------------------------- conversations -->
+<section class="card">
+  <div class="pane-head">
+    <h2>Recent conversations</h2>
+    <a class="btn tiny" href="/sessions?agent={{ agent.name }}">See all</a>
+  </div>
+  <table class="grid">
+    <thead><tr><th>Started by</th><th>Outcome</th><th>When</th><th>About</th></tr></thead>
+    <tbody>
+    {% for s in sessions %}
+      <tr>
+        <td><span class="badge">{{ origin_words.get(s['channel'], s['channel']) }}</span></td>
+        <td><span class="status {{ s['status'] }}">{{ status_words.get(s['status'], s['status']) }}</span></td>
+        <td class="small muted">{{ s['created_at'] | ago }}</td>
+        <td class="small"><a href="/sessions/{{ s['id'] }}">{{ s['title'] or 'open' }}</a></td>
+      </tr>
+    {% else %}<tr><td colspan="4" class="muted">Nothing yet — press <b>Try it</b> above.</td></tr>
+    {% endfor %}
+    </tbody>
+  </table>
+</section>
+
+<!-- -------------------------------------------------------------- advanced -->
+<details class="advanced">
+  <summary>Settings and advanced</summary>
+
+  <section class="card">
+    <h2>Basics</h2>
+    <form method="post" action="/agents/{{ agent.name }}/fields">
+      <fieldset class="plain" {% if unrepresentable %}disabled{% endif %}>
+        <div class="field-grid">
+          <label>Description
+            <input name="description" value="{{ agent.description }}"></label>
+          <label>Model
+            <input name="model" class="mono" list="known-models" value="{{ agent.model }}">
+            {% set here = model_groups | selectattr('provider', 'equalto',
+                            agent.model.split('/')[0] | lower) | first %}
+            {% if here and not here.ready %}
+            <span class="hint bad-text">{{ here.label }} has no key yet — add one under
+              <a href="/settings">Settings</a> or this agent will stop on its first turn.</span>
+            {% elif not here %}
+            <span class="hint">Heddled doesn't recognise
+              <code>{{ agent.model.split('/')[0] }}</code>. Any OpenAI-compatible service
+              works if you add it, but check the spelling.</span>
+            {% endif %}
+          </label>
+          <datalist id="known-models">
+            {% for g in model_groups %}{% for m in g.models %}
+            <option value="{{ m }}" label="{{ g.label }}{{ '' if g.ready else ' — needs a key' }}">
+            {% endfor %}{% endfor %}
+          </datalist>
+          <label>Remember earlier messages
+            <select name="memory_session">
+              <option value="auto" {{ 'selected' if (agent.memory or {}).get('session','auto') == 'auto' }}>yes</option>
+              <option value="none" {{ 'selected' if (agent.memory or {}).get('session','auto') == 'none' }}>no</option>
+            </select>
+          </label>
+          <label class="check">
+            <input type="checkbox" name="expose_mcp" {{ 'checked' if agent.expose.get('mcp') }}>
+            Let other systems use this agent as a tool
+          </label>
+        </div>
+
+        <h3>Where people can reach it</h3>
+        <ul class="checks">
+          {% for c in all_channels %}
+          <li><label class="check"><input type="checkbox" name="channels" value="{{ c }}"
+            {{ 'checked' if c in channels }}> <span class="mono">{{ c }}</span></label></li>
+          {% endfor %}
+        </ul>
+        <div class="row"><button class="btn primary" type="submit">Save</button></div>
+      </fieldset>
+    </form>
+  </section>
+
+  <section class="card">
+    <h2>Testing and publishing</h2>
+    <div class="row">
+      <button class="btn" onclick="runEvals()">Run its saved tests</button>
+      <a class="btn" href="/evals">See test results</a>
+    </div>
+    <table class="grid tight">
+      <thead><tr><th>Where</th><th>What is running there</th><th></th></tr></thead>
+      <tbody>
+      {% for env in environments %}
+      {% set d = deployments.get(env) %}
+      <tr>
+        <td><b>{{ env }}</b></td>
+        <td class="small">
+          {% if env == 'dev' %}
+          <span class="muted">always the version you are editing</span>
+          {% elif not d %}
+          <span class="muted">nothing published yet — it runs the version you are editing</span>
+          {% elif d['version'] == agent.version %}
+          <span class="mono">{{ d['version'][:8] }}</span>
+          <span class="badge ok">same as now</span>
+          {% else %}
+          <span class="mono">{{ d['version'][:8] }}</span>
+          <span class="badge warn">older than what you are editing</span>
+          <button class="btn tiny" type="button"
+                  onclick="showDiff('{{ d['version'] }}')">see what changed</button>
+          {% endif %}
+        </td>
+        <td><button class="btn tiny" onclick="promote('{{ env }}')">publish
+          {{ agent.short_version }} here</button></td>
+      </tr>
+      {% endfor %}
+      </tbody>
+    </table>
+    <p class="muted small">You are editing version
+      <span class="mono">{{ agent.short_version }}</span>, which changes whenever you
+      edit this agent. <b>dev</b> always runs what you are editing; staging and prod
+      run the version published to them, so editing an agent does not quietly change
+      what they are running.
+      {% if agent.expose.get('mcp') %}Other systems can reach it at
+      <code>/mcp/{{ agent.name }}</code>.{% endif %}</p>
+  </section>
+
+  <section class="card">
+    <h2>The file itself</h2>
+    <p class="muted small">Everything above is stored in <code>{{ agent.path }}</code>.
+      Editing here is the same as editing that file.</p>
+    <form method="post" action="/agents/{{ agent.name }}/definition" id="raw-form">
+      <textarea name="definition" id="raw-yaml" class="code" rows="22"
+                aria-label="This agent's definition file" spellcheck="false">{{ raw }}</textarea>
+      <div class="row">
+        <button class="btn" type="button" id="preview-btn">See what would change</button>
+        <button class="btn primary" type="submit">Save</button>
+        <span id="raw-status" class="muted small"></span>
+      </div>
+      <pre class="payload hidden" id="raw-diff"></pre>
+    </form>
+  </section>
+
+</details>
+
+{# On the page, not behind a disclosure: undoing an edit is something you go
+   looking for in a hurry, and a triangle labelled "advanced" is the last place
+   anyone looks. #}
+<section class="card" id="versions">
+  <h2>Earlier versions</h2>
+  <p class="muted small">Every definition this agent has had, newest first. Put one
+    back if an edit turned out badly — restoring writes it as the current version,
+    it does not publish it anywhere.</p>
+  {% if versions %}
+  <table class="grid tight">
+    <thead><tr><th>When</th><th>Version</th><th>Running where</th><th></th></tr></thead>
+    <tbody>
+    {% for v in versions %}
+    <tr>
+      <td class="small muted">{{ v.when | ago }}</td>
+      <td class="mono small">{{ v.short }}</td>
+      <td>
+        {% if v.current %}<span class="badge ok">what you are editing</span>{% endif %}
+        {% for env in v.envs %}<span class="badge">{{ env }}</span>{% endfor %}
+      </td>
+      <td>
+        {% if not v.current %}
+        <button class="btn tiny" type="button"
+                onclick="showDiff('{{ v.version }}')">compare with now</button>
+        <form method="post" class="inline"
+              action="/agents/{{ agent.name }}/versions/{{ v.version }}/restore"
+              data-confirm="Put version {{ v.short }} back? It becomes what you are editing; published versions stay as they are.">
+          <button class="btn tiny" type="submit">restore</button>
+        </form>
+        {% endif %}
+      </td>
+    </tr>
+    {% endfor %}
+    </tbody>
+  </table>
+  {% else %}
+  <p class="muted">Only this one so far. Heddled keeps each definition as you change it,
+    so the next edit you make will appear here to compare against and put back.</p>
+  {% endif %}
+  {# The comparison lands here, outside the disclosure, so it is visible from
+     wherever it was asked for. #}
+  <pre class="payload hidden" id="version-diff"></pre>
+</section>
+
+{# Outside the collapsed section: deleting is not an advanced setting, and
+   hiding it behind a disclosure triangle is why it could not be found. #}
+<section class="card danger-zone">
+  <h2>Delete this agent</h2>
+  <p class="muted small">Removes it and its instructions. Conversations it already had
+    are kept.
+    {% if delegates %}
+    <b>{{ delegates | join(' and ') }}</b> can hand work to it, and will be changed
+    to stop doing so.
+    {% endif %}</p>
+  <form method="post" action="/agents/{{ agent.name }}/delete"
+        data-confirm="Delete {{ agent.name }}? This cannot be undone.{% if delegates
+        %} It will also be taken off {{ delegates | join(', ') }}.{% endif %}">
+    <button class="btn danger" type="submit">Delete {{ agent.name }}</button>
+  </form>
+</section>
+
+{% endblock %}
+
+{% block scripts %}
+<script>
+const AGENT = {{ agent.name | tojson }};
+
+// The trigger form shows only the fields that apply to the chosen kind.
+const kindSel = document.getElementById('trigger-kind');
+const whenSel = document.getElementById('trigger-when');
+function syncTriggerForm() {
+  const kind = kindSel.value;                     // schedule | folder | email
+  ['schedule', 'folder', 'email'].forEach(k =>
+    document.querySelectorAll('.when-' + k).forEach(
+      e => e.classList.toggle('hidden', !e.classList.contains('when-' + kind))));
+  if (kind === 'schedule') {
+    const custom = whenSel.value === 'custom';
+    document.getElementById('custom-field').classList.toggle('hidden', !custom);
+    // "Every 15 minutes" and "Every hour" have no time of day to pick.
+    const needsTime = !custom && !['hourly', 'every_15_min'].includes(whenSel.value);
+    document.getElementById('at-field').classList.toggle('hidden', !needsTime);
+  }
+}
+kindSel.addEventListener('change', syncTriggerForm);
+whenSel.addEventListener('change', syncTriggerForm);
+syncTriggerForm();
+
+async function runEvals() {
+  const r = await fetch(`/api/agents/${AGENT}/evals/run`, {method:'POST',
+    headers:{'content-type':'application/json'}, body:'{}'});
+  const d = await r.json();
+  if (d.run_id) location.href = `/evals/runs/${d.run_id}`;
+  else alert(d.error || 'Could not start the tests.');
+}
+
+const promote = env => heddledPublish(AGENT, env);
+
+// What changed between a stored version and the agent as it is now.
+async function showDiff(version) {
+  const out = document.getElementById('version-diff');
+  out.classList.remove('hidden');
+  out.textContent = 'comparing…';
+  out.scrollIntoView({block: 'nearest'});
+  const r = await fetch(`/api/agents/${AGENT}/versions/${version}/diff`);
+  const d = await r.json();
+  if (!r.ok) { out.textContent = d.error || 'Could not compare.'; return; }
+  const parts = [d.definition, d.instructions].filter(Boolean);
+  out.textContent = d.same
+    ? `${version.slice(0, 8)} is identical to what you are editing.`
+    : parts.join('\n');
+}
+
+// Show the change before writing it.
+const previewBtn = document.getElementById('preview-btn');
+if (previewBtn) previewBtn.addEventListener('click', async () => {
+  const status = document.getElementById('raw-status');
+  const out = document.getElementById('raw-diff');
+  const r = await fetch(`/api/agents/${AGENT}/preview`, {
+    method: 'POST', headers: {'content-type': 'application/json'},
+    body: JSON.stringify({definition: document.getElementById('raw-yaml').value})
+  });
+  const d = await r.json();
+  out.classList.remove('hidden');
+  if (!d.valid)      { status.textContent = '✗ this file has a mistake'; out.textContent = d.error; return; }
+  if (!d.changed)    { status.textContent = 'nothing to save'; out.textContent = 'The file already looks like this.'; return; }
+  status.textContent = '✓ looks fine';
+  out.textContent = d.diff + (d.unrepresentable.length
+    ? '\n\nNote: uses ' + d.unrepresentable.join(', ') + ' — the simple forms cannot show that.'
+    : '');
+});
+</script>
+{% endblock %}

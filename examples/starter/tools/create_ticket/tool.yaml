@@ -1,0 +1,8 @@
+name: create_ticket
+description: Create a support ticket for a human to pick up. Returns the ticket id.
+input:
+  subject: string
+  body: string
+  priority: string?
+output: { ticket_id: string, url: string }
+handler: ./handler.py

@@ -1,0 +1,66 @@
+# `docker compose up` gives you the full platform: core, console, trace store.
+# Cloud is a deployment target, not a requirement (concept principle 5).
+#
+#   docker compose up          → console on http://localhost:5005
+#   docker compose --profile split up
+#                              → same, but the worker runs as its own process
+#
+# Agent and tool definitions are bind-mounted from the checkout, so editing a
+# file on the host is picked up immediately and `git diff` still tells the truth.
+
+services:
+  heddled:
+    build: .
+    image: heddled:latest
+    # PID 1 would otherwise be Python, which neither forwards SIGTERM to the
+    # worker threads nor reaps children — `docker compose down` hangs.
+    init: true
+    ports:
+      - "${HEDDLED_PORT:-5005}:5005"
+    environment:
+      # Providers read these when Settings has no key stored.
+      ANTHROPIC_API_KEY: "${ANTHROPIC_API_KEY:-}"
+      OPENAI_API_KEY: "${OPENAI_API_KEY:-}"
+      DEEPSEEK_API_KEY: "${DEEPSEEK_API_KEY:-}"
+      GROQ_API_KEY: "${GROQ_API_KEY:-}"
+      MISTRAL_API_KEY: "${MISTRAL_API_KEY:-}"
+      TOGETHER_API_KEY: "${TOGETHER_API_KEY:-}"
+      OPENROUTER_API_KEY: "${OPENROUTER_API_KEY:-}"
+      OLLAMA_BASE_URL: "${OLLAMA_BASE_URL:-}"
+      HEDDLED_KEEP_FULL_CONTEXT_DAYS: "${HEDDLED_KEEP_FULL_CONTEXT_DAYS:-90}"
+      # In split mode the web container must not also tick triggers.
+      HEDDLED_WEB_ONLY: "${HEDDLED_WEB_ONLY:-0}"
+    volumes:
+      - ./agents:/app/agents
+      - ./tools:/app/tools
+      - heddled-data:/app/data
+      - heddled-var:/app/var
+    restart: unless-stopped
+
+  # Optional second process. Enable with `--profile split`, and set
+  # HEDDLED_WEB_ONLY=1 so the web container serves HTTP only.
+  worker:
+    build: .
+    image: heddled:latest
+    init: true
+    profiles: ["split"]
+    command: ["heddled", "worker", "--concurrency", "4"]
+    environment:
+      ANTHROPIC_API_KEY: "${ANTHROPIC_API_KEY:-}"
+      OPENAI_API_KEY: "${OPENAI_API_KEY:-}"
+      DEEPSEEK_API_KEY: "${DEEPSEEK_API_KEY:-}"
+      GROQ_API_KEY: "${GROQ_API_KEY:-}"
+      MISTRAL_API_KEY: "${MISTRAL_API_KEY:-}"
+      TOGETHER_API_KEY: "${TOGETHER_API_KEY:-}"
+      OPENROUTER_API_KEY: "${OPENROUTER_API_KEY:-}"
+      OLLAMA_BASE_URL: "${OLLAMA_BASE_URL:-}"
+    volumes:
+      - ./agents:/app/agents
+      - ./tools:/app/tools
+      - heddled-data:/app/data
+      - heddled-var:/app/var
+    restart: unless-stopped
+
+volumes:
+  heddled-data:
+  heddled-var:

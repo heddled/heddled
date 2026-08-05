@@ -1,0 +1,139 @@
+{% extends "base.html" %}
+{% block title %}{{ tool.name }} · Tools · Heddled{% endblock %}
+{% block body %}
+
+<header class="page-head">
+  <h1><a href="/tools" class="crumb">Tools</a> / <span class="mono">{{ tool.name }}</span>
+    <details class="rename">
+      <summary title="Rename this tool">Rename</summary>
+      <div class="rename-panel">
+        <form method="post" action="/tools/{{ tool.name }}/rename"
+              data-confirm="Rename {{ tool.name }}?{% if agents
+              %} {{ agents | join(' and ') }} will be pointed at the new name.{% endif %}">
+          <input name="new_name" value="{{ tool.name }}" class="mono" required
+                 pattern="[a-z][a-z0-9_]*" aria-label="New name"
+                 title="lowercase letters, digits and underscores">
+          <button class="btn" type="submit">Rename</button>
+        </form>
+        <p class="hint">{% if agents %}<b>{{ agents | join(' and ') }}</b> will be pointed
+          at the new name.{% else %}No agent is using it yet.{% endif %}</p>
+      </div>
+    </details>
+  </h1>
+  <form method="post" action="/tools/{{ tool.name }}/delete"
+        data-confirm="Delete {{ tool.name }}? {% if agents
+        %}It will also be taken off {{ agents | join(', ') }}.{%
+        else %}Nothing is using it.{% endif %}">
+    <button class="btn danger tiny" type="submit">Delete</button>
+  </form>
+</header>
+
+{% if error %}<div class="banner bad">{{ error }}</div>{% endif %}
+{% if renamed_from %}
+<div class="banner ok"><p>Renamed from <b>{{ renamed_from }}</b>.
+  {% if repointed %}{{ repointed | join(' and ') }}
+  now point{{ '' if repointed | length > 1 else 's' }} at the new name.{% endif %}</p></div>
+{% endif %}
+{% if saved %}<div class="banner ok">Saved {{ saved }}{% if committed %} · committed
+  <code>{{ committed }}</code>{% endif %}</div>{% endif %}
+
+<p class="muted">
+  {{ tool.description }}<br>
+  {% if agents %}
+  Mounted by {% for a in agents %}<a class="chip" href="/agents/{{ a }}">{{ a }}</a>{% endfor %}
+  — a change here reaches {{ 'them all' if agents | length > 1 else 'it' }}.
+  {% else %}
+  No agent can use this yet. Open an agent and tick it under <b>What it can do</b>.
+  {% endif %}
+</p>
+
+<div class="tabs" id="tool-tabs">
+  <a href="#schema" class="tab on" data-pane="schema">Schema</a>
+  <a href="#handler" class="tab" data-pane="handler">Handler</a>
+  <a href="#test" class="tab" data-pane="test">Test</a>
+</div>
+
+<section class="pane" id="pane-schema">
+  <form method="post" action="/tools/{{ tool.name }}">
+    <p class="muted small"><code>{{ tool.dir }}/tool.yaml</code> — the contract the model
+      is shown. Renaming fields changes what the model sends.</p>
+    <textarea name="manifest" class="code" rows="14" aria-label="What this tool takes and returns"
+              spellcheck="false">{{ manifest }}</textarea>
+    <div class="row"><button class="btn primary" type="submit">Save schema</button></div>
+  </form>
+</section>
+
+<section class="pane hidden" id="pane-handler">
+  <form method="post" action="/tools/{{ tool.name }}">
+    <p class="muted small"><code>{{ tool.dir }}/handler.py</code> — must define
+      <code>handle(args, ctx)</code>. Syntax is checked before the file is written.</p>
+    <textarea name="handler" class="code" rows="22" aria-label="The code this tool runs"
+              spellcheck="false">{{ handler }}</textarea>
+    <div class="row"><button class="btn primary" type="submit">Save handler</button></div>
+  </form>
+</section>
+
+<section class="pane hidden" id="pane-test">
+  <p class="muted small">Runs the handler in isolation — no agent, no model, no session.
+    The same path as <code>heddled tool test {{ tool.name }}</code>.</p>
+  <label>Arguments
+    <textarea id="test-args" class="code" rows="6" aria-label="Arguments to test with"
+              spellcheck="false">{{ sample_args }}</textarea>
+  </label>
+  <div class="row">
+    <button class="btn primary" id="run-tool">▶ Run</button>
+    <span id="test-status" class="muted small"></span>
+  </div>
+  <pre class="payload" id="test-output">Not run yet.</pre>
+</section>
+
+{% endblock %}
+
+{% block scripts %}
+<script>
+// Tabs: plain anchors so every pane is deep-linkable (#schema, #handler, #test).
+const tabs = document.querySelectorAll('#tool-tabs .tab');
+function show(name) {
+  tabs.forEach(t => t.classList.toggle('on', t.dataset.pane === name));
+  document.querySelectorAll('.pane').forEach(p =>
+    p.classList.toggle('hidden', p.id !== 'pane-' + name));
+}
+tabs.forEach(t => t.addEventListener('click', () => show(t.dataset.pane)));
+if (location.hash) show(location.hash.slice(1));
+
+document.getElementById('run-tool').addEventListener('click', async () => {
+  const out = document.getElementById('test-output');
+  const status = document.getElementById('test-status');
+  let args;
+  try {
+    args = JSON.parse(document.getElementById('test-args').value || '{}');
+  } catch (e) {
+    out.textContent = 'Arguments are not valid JSON: ' + e.message;
+    return;
+  }
+  status.textContent = 'running…';
+  out.textContent = '';
+  const t0 = performance.now();
+  try {
+    const r = await fetch('/api/tools/{{ tool.name }}/test', {
+      method: 'POST',
+      headers: {'content-type': 'application/json'},
+      body: JSON.stringify({args})
+    });
+    const body = await r.json();
+    status.textContent = (body.ok ? '✓ ok' : '✗ failed') +
+      ' · ' + Math.round(performance.now() - t0) + ' ms';
+    let text = '';
+    if (body.logs && body.logs.length) {
+      text += body.logs.map(l => 'log: ' + l).join('\n') + '\n\n';
+    }
+    text += JSON.stringify(body.error !== undefined && body.error !== null
+      ? {error: body.error} : body.result, null, 2);
+    out.textContent = text;
+  } catch (e) {
+    status.textContent = '';
+    out.textContent = String(e);
+  }
+});
+</script>
+{% endblock %}

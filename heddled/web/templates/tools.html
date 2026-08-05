@@ -1,0 +1,67 @@
+{% extends "base.html" %}
+{% import "_paging.html" as paging_ui %}
+{% block title %}Tools · Heddled{% endblock %}
+{% block body %}
+
+<header class="page-head">
+  <h1>Tools</h1>
+  <a class="btn primary" href="/tools/new">+ New tool</a>
+</header>
+{% if deleted %}
+<div class="banner ok"><p><b>{{ deleted }}</b> is gone.
+  {% if unmounted %}It was taken off {{ unmounted | join(', ') }}, which can no longer
+  use it.{% endif %}</p></div>
+{% endif %}
+
+<p class="muted">A tool is one thing an agent is allowed to do. Tools are shared — the
+  same one can be given to several agents, and this page shows which.</p>
+{% if total_tools %}
+{{ paging_ui.search(q, 'name or what it does', total_tools, 'tool') }}
+{% endif %}
+
+<table class="grid">
+  <thead>
+    <tr>
+      <th>Tool</th><th>What it does</th><th>Needs to know</th><th>Given to</th>
+      <th>Last used</th><th></th>
+    </tr>
+  </thead>
+  <tbody>
+  {% for row in rows %}
+  <tr>
+    <td><a class="mono strong" href="/tools/{{ row.tool.name }}">{{ row.tool.name }}</a>
+      {% if row.gated %}<span class="badge warn" title="an agent gates this behind approval">⚑</span>{% endif %}
+    </td>
+    <td>{{ row.tool.description }}</td>
+    <td class="mono small">{{ (row.tool.input_schema.properties or {}).keys() | join(', ') }}</td>
+    <td>
+      {# A widely shared tool would otherwise render a wall of chips. #}
+      {% for a in row.agents[:3] %}<a class="chip" href="/agents/{{ a }}">{{ a }}</a>{% endfor %}
+      {% if row.agents | length > 3 %}
+      <a class="chip muted" href="/agents?q={{ row.tool.name }}"
+         title="{{ row.agents | join(', ') }}">+{{ row.agents | length - 3 }} more</a>
+      {% elif not row.agents %}<span class="muted">no agent yet</span>{% endif %}
+    </td>
+    <td class="muted small">{{ row.last_run | ago if row.last_run else '—' }}</td>
+    <td><a class="btn tiny" href="/tools/{{ row.tool.name }}#test">Test</a></td>
+  </tr>
+  {% else %}
+  {% if q %}
+  <tr><td colspan="6" class="muted">No tool matches <b>{{ q }}</b>.
+    <a href="?">Show them all</a>.</td></tr>
+  {% else %}
+  <tr><td colspan="6">
+    <div class="onboard compact">
+      <p><b>No tools yet.</b> A tool is one thing an agent can do for you — look a
+        customer up, check a list, send a message.</p>
+      <p class="muted">You don't need to write any code: pick the kind you need and
+        fill in a short form.</p>
+      <a class="btn primary" href="/tools/new">Make your first tool</a>
+    </div></td></tr>
+  {% endif %}
+  {% endfor %}
+  </tbody>
+</table>
+{{ paging_ui.pager(paging, 'tool') }}
+
+{% endblock %}

@@ -1,0 +1,50 @@
+# Runtime state — the event store, session state, job queue, cursors, and
+# whatever the adapters have written. All of it is created on first run and
+# belongs to the machine it is on, not to the project.
+data/
+var/
+
+# The website: heddled.com, its documentation, its screenshots, and the nginx
+# config that serves them. Its own thing with its own deployment, not part of
+# what you clone in order to run Heddled.
+/site/
+/deploy/
+
+# Your agents and tools. These are definitions rather than data, and Heddled is
+# built so that `git diff` tells the truth about them — but they are yours, and
+# what an agent is told to do is not something to publish by accident.
+#
+# So this repository ships none of them. `examples/starter/` has a working set
+# to copy in, and `heddled init` writes a smaller one.
+#
+# To version your own: keep them in a private repository of their own, or drop
+# these two lines in your fork. Commit-on-save (Settings) then works as
+# intended — with nothing pointed at a public remote unless you point it there.
+/agents/
+/tools/
+
+__pycache__/
+*.py[cod]
+*.egg-info/
+build/
+dist/
+.eggs/
+
+.venv/
+venv/
+env/
+
+.pytest_cache/
+.coverage
+htmlcov/
+.ruff_cache/
+.mypy_cache/
+
+# Provider keys in development. Read at startup, never written back.
+.env
+*.log
+
+.DS_Store
+.idea/
+.vscode/
+.claude/

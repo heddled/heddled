@@ -1,0 +1,221 @@
+{% extends "base.html" %}
+{% block title %}Test {{ agent.name }} · Heddled{% endblock %}
+{% block main_class %}full{% endblock %}
+{% block body %}
+<div class="page-head compact">
+  <h1><a href="/agents/{{ agent.name }}">{{ agent.name }}</a> · Try it</h1>
+  <div class="page-actions">
+    <span class="small muted" id="session-label"></span>
+    <button class="btn" id="reset-btn" onclick="newSession()" hidden>Start fresh</button>
+  </div>
+</div>
+
+{% if not model_service.ready %}
+<div class="banner bad">
+  <p>
+  {% if model_service.known %}
+  <b>This won't answer yet.</b> {{ agent.name }} runs on
+  <b>{{ model_service.label }}</b> and there is no {{ model_service.label }} key.
+  <a href="/settings">Add one under Settings</a>, or
+  <a href="/agents/{{ agent.name }}">change the model</a> — <code>mock/echo</code>
+  needs no account and is fine for a first look.
+  {% else %}
+  <b>This won't answer yet.</b> Heddled doesn't recognise
+  <code>{{ model_service.provider }}</code> as a model service.
+  <a href="/agents/{{ agent.name }}">Pick a different model</a>.
+  {% endif %}
+  </p>
+</div>
+{% endif %}
+
+{% if created %}
+<div class="banner ok">
+  <b>{{ agent.name }} is ready.</b> Say something to it below — the panel on the right
+  shows what it does, step by step, as it happens. Nothing here is visible to anyone
+  else; it's your own scratch conversation.
+</div>
+{% endif %}
+
+<div class="harness">
+  <section class="chat-pane">
+    <div class="pane-head"><span>Chat</span>
+      <span class="pane-tools muted small">just for testing — not a customer-facing window</span></div>
+    <div id="chat" class="chat">
+      {# The first thing anyone sees after making an agent. An empty box with a
+         blinking cursor is a bad way to meet your own creation. #}
+      <div class="chat-empty" id="chat-empty">
+        <p><b>Say something to {{ agent.name }}.</b></p>
+        <p class="muted small">Nothing here is live — this is your own scratch
+          conversation, and nobody else sees it.</p>
+        {% if openers %}
+        <p class="muted small">Try one of these:</p>
+        <ul class="openers">
+          {% for o in openers %}
+          <li><button type="button" class="opener" data-text="{{ o }}">{{ o }}</button></li>
+          {% endfor %}
+        </ul>
+        {% endif %}
+      </div>
+    </div>
+    <form id="chat-form" class="chat-form">
+      <label class="sr-only" for="chat-input">Message to {{ agent.name }}</label>
+      <input id="chat-input" placeholder="Say something to {{ agent.name }}…"
+             autocomplete="off" autofocus>
+      <button class="btn primary" type="submit">Send</button>
+    </form>
+  </section>
+
+  <section class="trace-pane-host">
+    {% set events = [] %}
+    {% set live = True %}
+    {% include "_trace.html" %}
+  </section>
+</div>
+{% endblock %}
+
+{% block scripts %}
+<script>
+const AGENT = {{ agent.name | tojson }};
+let sessionId = {{ (session_id or '') | tojson }} || null;
+
+function label() {
+  // Offering "start over" before anything has started is a puzzle, not a control.
+  const started = Boolean(sessionId);
+  document.getElementById('session-label').textContent =
+    started ? 'this conversation is saved under Activity' : '';
+  document.getElementById('reset-btn').hidden = !started;
+}
+// Kept rather than destroyed: "Start fresh" used to leave a blank white box,
+// taking the openers and the explanation with it.
+const emptyState = document.getElementById('chat-empty');
+function hideEmpty() {
+  if (emptyState) emptyState.hidden = true;
+}
+function showEmpty() {
+  if (emptyState) {
+    emptyState.hidden = false;
+    document.getElementById('chat').append(emptyState);
+  }
+}
+document.querySelectorAll('.opener').forEach(b => b.addEventListener('click', () => {
+  const input = document.getElementById('chat-input');
+  input.value = b.dataset.text;
+  input.focus();
+  document.getElementById('chat-form').requestSubmit();
+}));
+
+function bubble(role, text, cls) {
+  hideEmpty();
+  const el = document.createElement('div');
+  el.className = `bubble ${role} ${cls || ''}`;
+  el.textContent = text;
+  document.getElementById('chat').append(el);
+  el.scrollIntoView({block: 'end'});
+  return el;
+}
+function newSession() {
+  sessionId = null;
+  document.querySelectorAll('#chat .bubble').forEach(b => b.remove());
+  document.getElementById('timeline').innerHTML = '';
+  showEmpty();
+  label();
+  history.replaceState(null, '', location.pathname);
+  if (window.HeddledTrace) window.HeddledTrace.disconnect();
+  document.getElementById('chat-input').focus();
+}
+
+const form = document.getElementById('chat-form');
+const sendBtn = form.querySelector('button[type=submit]');
+
+// While a turn is in flight the form is closed: sending a second message into
+// the same conversation before the first has settled starts a turn that races
+// the one already running.
+function busy(on) {
+  const input = document.getElementById('chat-input');
+  input.disabled = on;
+  sendBtn.disabled = on;
+  sendBtn.textContent = on ? 'Sending…' : 'Send';
+  if (!on) input.focus();
+}
+
+function say(el, text, cls) {
+  el.classList.remove('pending');
+  el.textContent = text;
+  if (cls) el.classList.add(cls);
+}
+
+form.addEventListener('submit', async (e) => {
+  e.preventDefault();
+  const input = document.getElementById('chat-input');
+  const text = input.value.trim();
+  if (!text || sendBtn.disabled) return;
+  input.value = '';
+  bubble('user', text);
+  const thinking = bubble('agent', 'thinking…', 'pending');
+  busy(true);
+
+  let r, d;
+  try {
+    r = await fetch(`/api/agents/${AGENT}/messages`, {
+      method: 'POST', headers: {'content-type': 'application/json'},
+      body: JSON.stringify({text, session_id: sessionId, sync: true, timeout_s: 120})
+    });
+    d = await r.json();
+  } catch (err) {
+    // Losing the connection used to leave "…" on screen for ever.
+    say(thinking, 'Could not reach Heddled — it may have restarted. Your message was '
+        + 'not sent; try again.', 'err');
+    busy(false);
+    return;
+  }
+  if (!r.ok) {
+    say(thinking, d.error || 'Something went wrong sending that.', 'err');
+    busy(false);
+    return;
+  }
+
+  if (!sessionId) {
+    sessionId = d.session_id;
+    label();
+    window.HeddledTrace.connect(`/sessions/${sessionId}/stream`);
+    history.replaceState(null, '', `?session=${sessionId}`);
+  }
+  if (d.status === 'waiting-approval') {
+    say(thinking, '', 'paused');
+    thinking.append('⏸ Paused — it needs your approval before it can go further. ');
+    const link = document.createElement('a');
+    link.href = `/sessions/${d.session_id}`;
+    link.textContent = 'Approve or refuse it';
+    thinking.append(link, ' — or use the link wherever approvals are sent.');
+  } else if (d.status === 'timeout') {
+    say(thinking, '', 'err');
+    thinking.append('Still going after two minutes, so this window stopped waiting. ');
+    const link = document.createElement('a');
+    link.href = `/sessions/${d.session_id}`;
+    link.textContent = 'Follow it under Activity';
+    thinking.append(link, '.');
+  } else if (d.status === 'error') {
+    say(thinking, '', 'err');
+    thinking.append(d.error || 'It stopped without finishing. ');
+    const link = document.createElement('a');
+    link.href = `/sessions/${d.session_id}`;
+    link.textContent = 'See why';
+    thinking.append(' ', link, '.');
+  } else {
+    say(thinking, d.reply || '(it finished without saying anything)');
+  }
+  busy(false);
+});
+
+if (sessionId) {
+  label();
+  fetch(`/api/sessions/${sessionId}`).then(r => r.json()).then(d => {
+    (d.events || []).forEach(e => {
+      if (e.type === 'message.received') bubble('user', e.payload.text);
+      if (e.type === 'message.sent' && !e.payload.receipt) bubble('agent', e.payload.text);
+    });
+  });
+  window.addEventListener('load', () => window.HeddledTrace.connect(`/sessions/${sessionId}/stream`));
+}
+</script>
+{% endblock %}

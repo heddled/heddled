@@ -1,0 +1,68 @@
+{#
+  The only page someone outside Heddled ever sees.
+
+  It deliberately does NOT extend base.html: an approver is a finance manager or
+  a team lead who followed a link from Slack or an email. Showing them the agent
+  console's navigation invites them into an application they have no business in
+  and cannot understand, and makes a simple yes/no decision look like an admin
+  task. Everything here is aimed at someone who has never heard of this product.
+#}
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>{{ 'Approve this?' if approval['status'] == 'pending' else 'Already answered' }}</title>
+<link rel="stylesheet" href="{{ url_for('static', filename='console.css') }}">
+<link rel="icon" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 16 16'><text y='13' font-size='13'>🧵</text></svg>">
+</head>
+<body class="standalone">
+<main class="ask">
+
+  {% if message %}
+  <div class="banner {{ 'ok' if approval['status'] == 'approved' else 'bad' }}">{{ message }}</div>
+  {% endif %}
+
+  {% if approval['status'] == 'pending' %}
+  <h1>Can <b>{{ approval['agent'] }}</b> go ahead?</h1>
+  <p class="lede">It wants to <b>{{ approval['tool'].replace('_', ' ') }}</b>, and it
+    needs a person to say yes first.</p>
+
+  <dl class="ask-detail">
+    {% for key, value in args.items() %}
+    <div>
+      <dt>{{ key.replace('_', ' ') }}</dt>
+      <dd>{{ value | value_words(key) }}</dd>
+    </div>
+    {% else %}
+    <div><dt>details</dt><dd class="muted">none given</dd></div>
+    {% endfor %}
+  </dl>
+
+  <p class="muted small">Asked {{ approval['requested_at'] | ts }}.</p>
+
+  <div class="ask-actions">
+    <a class="btn primary big"
+       href="/approve/{{ approval['id'] }}?token={{ approval['token'] }}&decision=approved&by=web">Yes, go ahead</a>
+    <a class="btn danger big"
+       href="/approve/{{ approval['id'] }}?token={{ approval['token'] }}&decision=denied&by=web">No, don't</a>
+  </div>
+
+  <p class="muted small">If you say no, nothing happens and whoever set this up will see
+    your answer. You can close this page afterwards.</p>
+
+  {% else %}
+  <h1>{{ 'Approved' if approval['status'] == 'approved' else 'Not approved' }}</h1>
+  <p class="lede">
+    This was already answered{% if approval['resolver'] %} by
+    <b>{{ approval['resolver'] }}</b>{% endif %}. Nothing more is needed from you.
+  </p>
+  <dl class="ask-detail">
+    <div><dt>what was asked</dt>
+      <dd>{{ approval['agent'] }} wanted to {{ approval['tool'].replace('_', ' ') }}</dd></div>
+  </dl>
+  {% endif %}
+
+</main>
+</body>
+</html>

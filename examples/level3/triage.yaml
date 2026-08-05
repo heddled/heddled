@@ -1,0 +1,34 @@
+# A Level 3 agent: the turn engine itself is Python (concept §6).
+#
+# Everything else in this file is identical to a Level 1 YAML agent — same
+# adapters, same policies, same triggers. Only `handler:` differs, and the
+# platform treats the result as the same kind of object.
+#
+# Copy this file and triage_engine.py into your agents/ directory to try it.
+
+name: triage
+description: Invoice support with a deterministic triage pass in front of the model.
+model: mock/echo
+instructions: ./triage.md
+
+# Relative to this file. A dotted module path (`myproject.planner:PlanningEngine`)
+# works too, when your engine lives in an installed package.
+handler: ./triage_engine.py:TriageEngine
+
+adapters:
+  channels: [webchat, webhook]
+  tools: [lookup_invoice, refund]
+
+policies:
+  # Proof that a Level 3 engine still obeys the trust layer: this gate pauses
+  # the turn and routes out of Heddled exactly as it would for a YAML agent.
+  - tool: refund
+    requires_approval: true
+    approval_adapter: webhook
+  # Redaction happens inside `emit`, so it applies to a custom engine's events
+  # without the engine having to do anything.
+  - tool: "*"
+    redact: [iban, creditcard]
+
+memory:
+  session: auto

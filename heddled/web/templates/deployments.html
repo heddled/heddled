@@ -1,0 +1,62 @@
+{% extends "base.html" %}
+{% import "_paging.html" as paging_ui %}
+{% block title %}Publish · Heddled{% endblock %}
+{% block body %}
+<h1>Publish</h1>
+<p class="lede">Your agents keep working while you edit them, so you need a way to say
+  "this version is the one people should get". That's what publishing is.
+  <b>dev</b> is your own sandbox, <b>staging</b> is for showing colleagues, and
+  <b>prod</b> is the real thing.</p>
+
+<p class="muted small"><b>dev</b> always runs the version you are editing. Staging and prod
+  run the version published to them and keep running it while you edit — that is what
+  makes publishing a decision rather than a note. Publishing to <b>prod</b> asks for a
+  passing test run on that exact version first; you can override it, but it will ask.</p>
+
+{% if total_agents %}
+{{ paging_ui.search(q, 'agent name', total_agents, 'agent') }}
+{% endif %}
+
+<table class="grid">
+  <thead><tr><th>Agent</th><th>Latest edit</th>
+    {% for env in environments %}<th>{{ env }}</th>{% endfor %}<th>Tests</th></tr></thead>
+  <tbody>
+  {% for row in matrix %}
+    <tr>
+      <td><a href="/agents/{{ row.agent.name }}"><b>{{ row.agent.name }}</b></a></td>
+      <td class="small muted" title="version {{ row.agent.short_version }}">{{ row.edited | ago }}</td>
+      {% for env in environments %}
+        {% set d = row.envs[env] %}
+        <td>
+          {% if env == 'dev' %}
+            <span class="muted small" title="dev always runs the working file">what you are editing</span>
+          {% elif d %}
+            {% if d.version == row.agent.version %}
+              <span class="badge ok" title="published {{ d.promoted_at | ts }} by {{ d.promoted_by }}">up to date</span>
+            {% else %}
+              <a class="badge warn" href="/agents/{{ row.agent.name }}#versions"
+                 title="running {{ d.version[:8] }}, published {{ d.promoted_at | ts }} — you have edited the agent since">running
+                {{ d.version[:8] }}</a>
+            {% endif %}
+          {% else %}<span class="muted">not published</span>{% endif %}
+          <button class="btn tiny" onclick="promote('{{ row.agent.name }}', '{{ env }}')">publish here</button>
+        </td>
+      {% endfor %}
+      <td class="small {{ 'ok-text' if row.green else 'muted' }}">
+        {{ 'passing' if row.green else 'not tested yet' }}</td>
+    </tr>
+  {% else %}
+    <tr><td colspan="{{ 3 + environments | length }}" class="muted">
+      {% if q %}No agent matches <b>{{ q }}</b>. <a href="?">Show them all</a>.
+      {% else %}No agents yet. <a href="/agents/new">Make one</a> first.{% endif %}</td></tr>
+  {% endfor %}
+  </tbody>
+</table>
+{{ paging_ui.pager(paging, 'agent') }}
+{% endblock %}
+
+{% block scripts %}
+<script>
+const promote = heddledPublish;   // shared with the agent page, so they cannot drift
+</script>
+{% endblock %}

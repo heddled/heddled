@@ -1,0 +1,39 @@
+# The agent from the concept doc, made real. Copy this into agents/
+# to start from something that already works.
+# An agent is one file. Edit it here or in the console — same file either way.
+name: support
+description: Invoice and billing support agent for the finance team.
+model: mock/echo                     # provider-agnostic; swap for anthropic/claude-sonnet-4-6
+instructions: ./support.md
+
+adapters:
+  channels: [webchat, webhook]
+  tools:
+    - lookup_invoice
+    - create_ticket
+    - refund
+triggers:
+  - schedule: "0 8 * * 1-5"          # every weekday 08:00 — pull trigger
+    message: "Summarize overnight invoices and flag anything unpaid."
+  - poll: mailbox                     # pull trigger: poller adapter
+    every: 60s
+    config:
+      source: folder                  # drop a file in var/mailbox/ to fire this
+      path: ./var/mailbox
+    on_new: "Handle this incoming invoice email."
+  # push triggers (webhook, MCP, inbound email) need no entry here —
+  # they arrive through mounted channel adapters
+
+policies:
+  - tool: refund
+    requires_approval: true
+    approval_adapter: webhook         # routes out of Heddled; console is the fallback
+    budget: { max_eur_per_day: 500 }
+  - tool: "*"
+    redact: [iban, creditcard]        # applied at the trace-store boundary
+
+memory:
+  session: auto                       # summarised rolling context, on by default
+
+expose:
+  mcp: true                           # serves ask_support at /mcp/support

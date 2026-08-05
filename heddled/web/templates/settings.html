@@ -1,0 +1,153 @@
+{% extends "base.html" %}
+{% block title %}Settings · Heddled{% endblock %}
+{% block body %}
+<h1>Settings</h1>
+<p class="muted">Model providers and keys, approval routing, MCP caller credentials.
+  Each service takes its own key, so you can have several at once — an agent picks
+  one by its prefix, as in <code>deepseek/deepseek-chat</code>. Secrets live in the
+  store, not in the agent files, and environment variables
+  (<code>ANTHROPIC_API_KEY</code>, <code>DEEPSEEK_API_KEY</code>,
+  <code>HEDDLED_SLACK_*</code>) take over when a field is blank.</p>
+
+<form method="post">
+  {% for title, blurb, keys in groups %}
+  <section class="card">
+    <h2>{{ title }}</h2>
+    <p class="muted small">{{ blurb }}</p>
+    <div class="setting-rows">
+      {% for key in keys %}
+      <div class="setting-row">
+        <label for="s_{{ key }}">{{ labels[key] }}
+          <span class="mono small muted">{{ key }}</span></label>
+        {# Above the field, not below it: the field is the last thing in every
+           row, which is what keeps the fields lined up across the grid. #}
+        {% if secretish(key) and settings.get(key) %}
+        <label class="check clear-setting">
+          <input type="checkbox" name="clear" value="{{ key }}">
+          <span>remove on save</span></label>
+        {% endif %}
+        <input id="s_{{ key }}" name="setting_{{ key }}" class="mono"
+               type="{{ 'password' if secretish(key) else 'text' }}"
+               value="{{ '' if secretish(key) else settings.get(key, '') }}"
+               placeholder="{{ ('set — type to replace' if settings.get(key) else 'not set')
+                               if secretish(key) else 'not set' }}">
+      </div>
+      {% endfor %}
+    </div>
+    {% if title == "Where things go" %}
+    <p class="hint">A webhook, an MCP caller, an inbound email or a scheduled run
+      belongs to <code>{{ settings.get('default_env') or default_env }}</code> unless it
+      says otherwise. <b>dev</b> runs the agent you are editing; <b>staging</b> and
+      <b>prod</b> run the version published to them, so editing an agent stops
+      changing what your live traffic does. The Test tab is always dev.</p>
+    {% endif %}
+    {% if title == "Monitoring" %}
+      {% if otel.enabled %}
+      <p class="hint">Exporting to <code>{{ otel.endpoint }}</code> as
+        <code>{{ otel.service_name }}</code> — {{ otel.exported_turns }} turn(s) sent.
+        {% if otel.last_error %}<span class="badge bad">{{ otel.last_error }}</span>{% endif %}</p>
+      {% else %}
+      <p class="hint">Nothing is being exported yet. Set the collector address above,
+        then restart Heddled.</p>
+      {% endif %}
+    {% endif %}
+  </section>
+  {% endfor %}
+  <div class="row"><button class="btn primary" type="submit">Save all settings</button></div>
+</form>
+
+<section class="card">
+  <h2>Retention</h2>
+  <p class="muted">Full <code>context.built</code> payloads are stored compressed (zstd, or zlib on an
+    interpreter without it) and pruned after <b>{{ retention_days }} days</b>
+    (<code>HEDDLED_KEEP_FULL_CONTEXT_DAYS</code>). Replay and evals depend on them, so the
+    default keeps correctness first.</p>
+</section>
+
+{% if error %}<div class="banner bad">{{ error }}</div>{% endif %}
+{% if saved %}<div class="banner ok">{{ saved }}</div>{% endif %}
+
+<section class="card">
+  <h2>Secrets</h2>
+  <p class="muted small">API keys, webhook URLs — anything a tool needs but that
+    shouldn't sit in a file. Refer to one from any tool as
+    <code>{{ '{{secret.name}}' }}</code>; the value is swapped in when the tool runs and
+    is stripped back out before anything is recorded.</p>
+
+  {% if secrets %}
+  <table class="grid tight">
+    <thead><tr><th>Name</th><th>Use it as</th><th>Value</th><th></th></tr></thead>
+    <tbody>
+    {% for name, masked in secrets.items() %}
+    <tr>
+      <td class="mono">{{ name }}</td>
+      <td><code class="small">{{ '{{secret.' ~ name ~ '}}' }}</code></td>
+      <td class="mono small muted">{{ masked }}</td>
+      <td>
+        <form method="post" action="/settings/secrets" class="inline"
+              data-confirm="Remove {{ name }}? Any tool using it will stop working.">
+          <input type="hidden" name="remove" value="{{ name }}">
+          <button class="btn tiny danger" type="submit">remove</button>
+        </form>
+      </td>
+    </tr>
+    {% endfor %}
+    </tbody>
+  </table>
+  {% else %}
+  <p class="muted">None yet.</p>
+  {% endif %}
+
+  <form method="post" action="/settings/secrets" class="policy-form">
+    <input name="name" placeholder="billing_api_key" pattern="[a-zA-Z_][a-zA-Z0-9_]*"
+           required aria-label="Secret name">
+    <input name="value" type="password" placeholder="the value" required
+           aria-label="Secret value">
+    <button class="btn" type="submit">Add secret</button>
+  </form>
+</section>
+
+<section class="card">
+  <h2>Who can open this console</h2>
+  {% if auth_status.at_risk %}
+  <div class="banner bad">
+    <b>Nobody has claimed this Heddled yet</b> and it is reachable from the network.
+    Anyone who finds it can make themselves the administrator.
+  </div>
+  {% else %}
+  <p class="muted">Signing in is required. People and their access are managed on
+    the <a href="/users">People</a> page; change your own password on
+    <a href="/account">your account</a>.</p>
+  {% endif %}
+  <p class="hint">Programs authenticate differently: a person's account as
+    <code>Bearer &lt;username&gt;:&lt;password&gt;</code>, or an integration key from
+    <code>mcp_callers</code> above for a system that has no account. Approval links
+    carry their own token and never need either.</p>
+</section>
+
+<section class="card">
+  <h2>Commit on save</h2>
+  {% if git.available %}
+  <form method="post" action="/settings/commit-on-save">
+    <label class="check">
+      <input type="checkbox" name="enabled" {{ 'checked' if git.enabled }}
+             onchange="this.form.submit()">
+      Commit each console edit to <code>{{ git.repo }}</code>
+    </label>
+  </form>
+  <p class="muted small">Off by default. When on, saving an agent, tool or policy writes the
+    file <em>and</em> commits it, so <code>git log</code> becomes the change log. Leave it off
+    if you prefer to stage your own work — Heddled always writes the file either way.</p>
+  {% else %}
+  <p class="muted">Not a git repository, so there is nothing to commit to. Run
+    <code>git init</code> in the project root to enable this.</p>
+  {% endif %}
+</section>
+
+<section class="card">
+  <h2>All settings</h2>
+  <p class="muted small">Credentials are shown masked — Heddled has them, this page
+    doesn't hand them back.</p>
+  <pre class="payload">{{ safe_settings | pretty }}</pre>
+</section>
+{% endblock %}

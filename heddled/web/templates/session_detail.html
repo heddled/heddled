@@ -1,0 +1,143 @@
+{% extends "base.html" %}
+{% block title %}{{ session['id'][:12] }} · Heddled{% endblock %}
+{% block main_class %}full{% endblock %}
+{% block body %}
+<div class="turn-header">
+  <div>
+    <h1>{{ story_headline }}</h1>
+    <div class="meta-strip small">
+      <span class="env-tag env-{{ session['env'] or 'dev' }}"
+            title="{{ 'real traffic — this ran the version published to '
+                      ~ session['env'] if session['env'] not in (None, '', 'dev')
+                      else 'a trial run against the version you are editing' }}">{{
+        session['env'] or 'dev' }}</span>
+      <span class="sep">·</span>
+      <a href="/agents/{{ session['agent'] }}">{{ session['agent'] }}</a>
+      {% if session['agent_version'] %}
+      <span class="mono muted" title="the definition this conversation actually ran">{{
+        session['agent_version'][:8] }}</span>
+      {% endif %}
+      <span class="sep">·</span>
+      <span class="status {{ session['status'] }}">{{ status_words.get(session['status'], session['status']) }}</span>
+      <span class="sep">·</span>
+      <span title="what started this conversation">started by
+        <b>{{ origin_words.get(trigger_origin.get('kind', session['channel']),
+                               trigger_origin.get('kind', session['channel'])) }}</b>
+        {% if trigger_origin.get('reason') %}<span class="muted">— {{ trigger_origin.reason }}</span>{% endif %}</span>
+      <span class="sep">·</span>{{ session['created_at'] | ts }}
+      {% if session['parent_session_id'] %}
+        <span class="sep">·</span>handed over from
+        <a href="/sessions/{{ session['parent_session_id'] }}">another agent</a>
+      {% endif %}
+    </div>
+  </div>
+  <div class="page-actions">
+    <a class="btn tiny" href="/agents/{{ session['agent'] }}/test?session={{ session['id'] }}">Carry on chatting</a>
+    <button class="btn tiny" onclick="promoteGolden()"
+            title="Keep this conversation as an example to test future changes against">Save as a test</button>
+    <button class="btn tiny" onclick="injectOperator()"
+            title="Add a note to the conversation as if the agent had been told it">Step in</button>
+  </div>
+</div>
+
+{% if approvals %}
+{# Above the tabs on purpose: a pending approval is the single most important
+   thing on this page and must never be one click away. #}
+<div class="approvals">
+  {% for a in approvals %}
+  <div class="approval {{ a['status'] }}">
+    {% if a['status'] == 'pending' %}
+    <div>
+      <b>Waiting for you.</b> The agent wants to use
+      <b>{{ a['tool'].replace('_', ' ') }}</b> — {{ a['args'] | in_words }}.
+      <div class="muted small">A request was also sent to {{ a['routed_to'] }} — you can
+        approve it there or here, whichever is easier.</div>
+    </div>
+    <div class="row">
+      <a class="btn primary" href="/approve/{{ a['id'] }}?token={{ a['token'] }}&decision=approved&by=console">Approve</a>
+      <a class="btn danger" href="/approve/{{ a['id'] }}?token={{ a['token'] }}&decision=denied&by=console">Refuse</a>
+    </div>
+    {% else %}
+    <span class="badge {{ 'ok' if a['status'] == 'approved' else 'bad' }}">
+      {{ a['tool'].replace('_', ' ') }} — {{ 'approved' if a['status'] == 'approved' else 'refused' }}
+      by {{ a['resolver'] }}</span>
+    {% endif %}
+  </div>
+  {% endfor %}
+</div>
+{% endif %}
+
+<div class="tabs" id="view-tabs">
+  <a class="tab on" data-pane="summary">What happened</a>
+  <a class="tab" data-pane="detail">Every step ({{ events | length }})</a>
+</div>
+
+<section class="pane" id="pane-summary">
+  {% if not steps %}
+  <p class="muted">Nothing has happened yet.</p>
+  {% endif %}
+  <div class="story-wrap">
+  <ol class="story">
+    {% for step in steps %}
+    <li class="step-{{ step.kind }} tone-{{ step.tone }}">
+      <span class="story-time">{{ step.ts | clock }}</span>
+      <div class="story-body">
+        <div class="story-headline">{{ step.headline }}</div>
+        {% if step.detail %}<div class="story-detail">{{ step.detail }}</div>{% endif %}
+      </div>
+      {% if step.seq %}
+      <a class="story-jump" href="#e-{{ step.seq }}"
+         onclick="showDetail()" title="see the underlying record">details</a>
+      {% endif %}
+    </li>
+    {% endfor %}
+  </ol>
+  </div>
+</section>
+
+<div class="pane hidden" id="pane-detail">
+
+{% if children %}
+<div class="subsessions small">Sub-sessions:
+  {% for c in children %}<a class="mono" href="/sessions/{{ c['id'] }}">{{ c['agent'] }}/{{ c['id'][:8] }}</a>{% endfor %}
+</div>
+{% endif %}
+
+{% set stream_url = '/sessions/' ~ session['id'] ~ '/stream' %}
+{% include "_trace.html" %}
+</div>
+{% endblock %}
+
+{% block scripts %}
+<script>
+const SESSION = {{ session['id'] | tojson }};
+
+// "What happened" is the default; every record stays one click away.
+const viewTabs = document.querySelectorAll('#view-tabs .tab');
+function showPane(name) {
+  viewTabs.forEach(t => t.classList.toggle('on', t.dataset.pane === name));
+  document.getElementById('pane-summary').classList.toggle('hidden', name !== 'summary');
+  document.getElementById('pane-detail').classList.toggle('hidden', name !== 'detail');
+}
+viewTabs.forEach(t => t.addEventListener('click', () => showPane(t.dataset.pane)));
+function showDetail() { showPane('detail'); }
+// A link straight to an event (…#e-1234) should open on the details view.
+if (location.hash.startsWith('#e-')) showPane('detail');
+async function promoteGolden() {
+  const name = prompt('Name this saved conversation, so you recognise it later:',
+    {{ (session['title'] or 'saved conversation') | tojson }});
+  if (!name) return;
+  const r = await fetch('/api/goldens', {method:'POST', headers:{'content-type':'application/json'},
+    body: JSON.stringify({session_id: SESSION, name})});
+  const d = await r.json();
+  if (r.ok) location.href = '/evals'; else alert(d.error || 'Could not save it.');
+}
+async function injectOperator() {
+  const text = prompt('What should the agent be told? It carries on from there.');
+  if (!text) return;
+  const r = await fetch(`/api/sessions/${SESSION}/inject`, {method:'POST',
+    headers:{'content-type':'application/json'}, body: JSON.stringify({text})});
+  if (r.ok) location.reload(); else alert((await r.json()).error);
+}
+</script>
+{% endblock %}

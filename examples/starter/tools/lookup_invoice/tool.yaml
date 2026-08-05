@@ -1,0 +1,5 @@
+name: lookup_invoice
+description: Look up an invoice by number; returns status and amount.
+input:  { invoice_number: string }
+output: { status: string, amount_eur: number }
+handler: ./handler.py

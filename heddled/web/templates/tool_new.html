@@ -1,0 +1,133 @@
+{% extends "base.html" %}
+{% block title %}New tool · Heddled{% endblock %}
+{% block body %}
+
+<header class="page-head">
+  <h1><a href="/tools" class="crumb">Tools</a> / New tool</h1>
+</header>
+
+{% if not chosen %}
+<p class="lede">A tool is something your agent can <em>do</em> — look a customer up,
+  send a message, check a list. Pick the kind you need and fill in the details.
+  No code required.</p>
+
+<div class="cards">
+  {% for entry in catalog %}
+  <a class="pick-card" href="/tools/new?type={{ entry.type }}">
+    <h2>{{ entry.label }}</h2>
+    <p>{{ entry.blurb }}</p>
+  </a>
+  {% endfor %}
+  <a class="pick-card subtle" href="/tools/new?type=python">
+    <h2>Write it in Python</h2>
+    <p>For anything the options above don't cover. Needs someone who codes.</p>
+  </a>
+</div>
+
+{% else %}
+
+<form method="post" action="/tools" class="wizard">
+  <input type="hidden" name="type" value="{{ chosen.type }}">
+
+  <p class="lede">{{ chosen.label }} — {{ chosen.blurb }}</p>
+
+  <fieldset class="step">
+    <legend>1 · What is it called?</legend>
+    <label>Name
+      <input name="name" required pattern="[a-z][a-z0-9_]*" placeholder="office_location"
+             autocomplete="off"></label>
+    <p class="hint">Lowercase, words joined by underscores.</p>
+
+    <label>What does it do?
+      <input name="description" required
+             placeholder="Find which office a team sits in."></label>
+    <p class="hint">Write this for the agent — it decides when to use the tool by
+      reading this sentence. Be specific about what it returns.</p>
+  </fieldset>
+
+  <fieldset class="step">
+    <legend>2 · What does it need to know?</legend>
+    <p class="hint">The pieces of information the agent must supply each time.
+      The agent works these out from the conversation.</p>
+    <div id="inputs">
+      <div class="pair-row">
+        <input name="input_name" placeholder="team" autocomplete="off"
+               aria-label="Name of something the tool needs to know">
+        <select name="input_type" aria-label="What kind of value that is">
+          <option value="string">text</option>
+          <option value="number">number</option>
+          <option value="boolean">yes / no</option>
+        </select>
+      </div>
+    </div>
+    <button class="btn tiny" type="button" onclick="addInput()">+ another</button>
+  </fieldset>
+
+  <fieldset class="step">
+    <legend>3 · {{ chosen.label }}</legend>
+    {% if chosen.type == 'python' %}
+    <label>The code
+      <textarea name="handler" class="code" rows="14" spellcheck="false"
+                placeholder="def handle(args, ctx):
+    ctx.log(&quot;looking it up&quot;)
+    return {&quot;result&quot;: args[&quot;team&quot;].title()}"></textarea></label>
+    <p class="hint"><code>args</code> holds the values from step 2, already checked
+      against the types you chose. <code>ctx.log(...)</code> puts a line on the trace
+      so you can see what it did. Return a dictionary.</p>
+    <p class="hint">Leave this empty and Heddled writes a working starting point from
+      the name and inputs above — you can edit it on the next screen either way.</p>
+    {% endif %}
+    {% for field in chosen.fields %}
+    <label>{{ field.label }}{% if field.required %} <span class="req">*</span>{% endif %}
+      {% if field.kind == 'textarea' or field.kind == 'json' %}
+      <textarea name="config__{{ field.name }}" class="code" rows="4"
+                placeholder="{{ field.placeholder or '' }}"
+                {{ 'required' if field.required }}></textarea>
+      {% elif field.kind == 'choice' %}
+      <select name="config__{{ field.name }}">
+        {% for choice in field.choices %}
+        <option value="{{ choice }}" {{ 'selected' if choice == field.default }}>{{ choice }}</option>
+        {% endfor %}
+      </select>
+      {% elif field.kind == 'pairs' %}
+      <div class="pairs" data-field="{{ field.name }}">
+        <div class="pair-row">
+          <input name="config__{{ field.name }}__key" placeholder="name" autocomplete="off">
+          <input name="config__{{ field.name }}__value" placeholder="value" autocomplete="off">
+        </div>
+      </div>
+      <button class="btn tiny" type="button"
+              onclick="addPair(this, '{{ field.name }}')">+ another</button>
+      {% else %}
+      <input name="config__{{ field.name }}" class="{{ 'mono' if field.kind == 'text' }}"
+             placeholder="{{ field.placeholder or '' }}" {{ 'required' if field.required }}>
+      {% endif %}
+    </label>
+    {% if field.help %}<p class="hint">{{ field.help }}</p>{% endif %}
+    {% endfor %}
+  </fieldset>
+
+  <div class="row">
+    <a class="btn" href="/tools/new">Back</a>
+    <button class="btn primary" type="submit">Create tool</button>
+  </div>
+</form>
+
+{% endif %}
+{% endblock %}
+
+{% block scripts %}
+<script>
+function addInput() {
+  const row = document.querySelector('#inputs .pair-row').cloneNode(true);
+  row.querySelectorAll('input').forEach(i => i.value = '');
+  document.getElementById('inputs').appendChild(row);
+}
+function addPair(button, field) {
+  const container = button.previousElementSibling;
+  const row = container.querySelector('.pair-row').cloneNode(true);
+  row.querySelectorAll('input').forEach(i => i.value = '');
+  container.appendChild(row);
+}
+</script>
+{% endblock %}

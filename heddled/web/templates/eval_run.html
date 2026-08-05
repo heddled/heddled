@@ -1,0 +1,100 @@
+{% extends "base.html" %}
+{% block title %}Test results · Heddled{% endblock %}
+{% block body %}
+
+<div class="page-head">
+  <div>
+    <h1>{{ 'Everything still works' if run['status'] == 'passed'
+          else ('Still running…' if run['status'] == 'running' else 'Something changed') }}</h1>
+    <div class="meta-strip small">
+      <a href="/agents/{{ run['agent'] }}">{{ run['agent'] }}</a>
+      <span class="sep">·</span>
+      {% set total = run['passed'] + run['failed'] %}
+      {{ run['passed'] }} of {{ total }} saved
+      conversation{{ 's' if total != 1 }}
+      still behave{{ 's' if total == 1 }} the same
+      <span class="sep">·</span>{{ run['started_at'] | ts }}
+    </div>
+  </div>
+  <div class="page-actions">
+    <a class="btn" href="/evals">All tests</a>
+  </div>
+</div>
+
+{% if run['status'] == 'running' %}
+<div class="banner warn">Still replaying — <a href="">refresh</a> in a moment.</div>
+{% endif %}
+
+{% for c in result.get('cases', []) %}
+<section class="card case {{ 'passed' if c.passed else 'failed' }}">
+  <div class="pane-head">
+    <h2>{{ c.name }}</h2>
+    <span class="badge {{ 'ok' if c.passed else 'bad' }}">
+      {{ 'same as before' if c.passed else 'behaves differently' }}</span>
+  </div>
+
+  {% if c.error %}
+  <p class="muted small">This one could not be replayed.</p>
+  <pre class="payload">{{ c.error }}</pre>
+  {% endif %}
+
+  {% if c.tool_diff %}
+    {% if c.tool_diff.match %}
+    <p class="muted small">It used the same tools, in the same order, with the same values.</p>
+    {% else %}
+    <h3>It used different tools this time</h3>
+    <p class="muted small">The first difference was at step
+      {{ (c.tool_diff.first_divergence or 0) + 1 }}.</p>
+    <table class="grid tight">
+      <thead><tr><th>Step</th><th>What changed</th><th>Before</th><th>Now</th></tr></thead>
+      <tbody>
+      {% for d in c.tool_diff.diffs %}
+        <tr>
+          <td>{{ d.index + 1 }}</td>
+          <td class="bad-text">{{ {'missing': 'no longer done',
+                                   'extra': 'newly done',
+                                   'different_tool': 'a different tool',
+                                   'different_arguments': 'different values'}
+                                  .get(d.kind, d.kind) }}</td>
+          <td class="mono small">{{ d.expected | pretty }}</td>
+          <td class="mono small">{{ d.actual | pretty }}</td>
+        </tr>
+      {% endfor %}
+      </tbody>
+    </table>
+    {% endif %}
+  {% endif %}
+
+  {% if c.get('assertions') %}
+  <h3>Checks</h3>
+  <ul class="assertions">
+    {% for a in c.assertions %}
+      <li class="{{ 'pass' if a.passed else 'fail' }}">{{ a.description }}</li>
+    {% endfor %}
+  </ul>
+  {% endif %}
+
+  <div class="cols">
+    <div><h3>What it says now</h3><pre class="payload">{{ c.answer }}</pre></div>
+    <div><h3>What it said when you saved it</h3>
+      <pre class="payload">{{ c.expected_answer }}</pre></div>
+  </div>
+
+  <div class="row">
+    {% if c.replay_session_id %}
+      <a class="btn tiny" href="/sessions/{{ c.replay_session_id }}">See this replay</a>
+    {% endif %}
+    {% if c.golden_session_id and c.replay_session_id %}
+      <a class="btn tiny" href="/sessions/{{ c.replay_session_id }}?compare={{ c.golden_session_id }}">
+        Compare side by side</a>
+    {% endif %}
+  </div>
+</section>
+{% else %}
+<div class="onboard">
+  <h2>Nothing to replay</h2>
+  <p>This agent has no saved conversations yet. Open one under
+    <a href="/sessions">Activity</a> and press <b>Save as a test</b>.</p>
+</div>
+{% endfor %}
+{% endblock %}

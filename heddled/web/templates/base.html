@@ -1,0 +1,269 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>{% block title %}Heddled{% endblock %}</title>
+<link rel="stylesheet" href="{{ url_for('static', filename='console.css') }}">
+<link rel="icon" href="{{ url_for('static', filename='brand/icon.svg') }}"
+      type="image/svg+xml">
+</head>
+<body>
+<a class="skip-link" href="#main">Skip to content</a>
+<nav class="nav" aria-label="Main">
+  {# Inline rather than an <img> so the weave takes the nav's own colour and
+     follows the theme; only the one madder thread is fixed. #}
+  <a class="brand" href="/">
+    <svg class="brand-mark" viewBox="0 0 64 64" fill="none" stroke-linecap="square"
+         aria-hidden="true" focusable="false">
+      <g stroke="currentColor" stroke-width="7.5">
+        <path d="M18 6 V26 M18 38 V58"/>
+        <path d="M46 6 V26 M46 38 V58"/>
+        <path d="M6 18 H26 M38 18 H58"/>
+        <path d="M6 50 H26 M38 50 H58"/>
+      </g>
+      <path d="M6 34 H34" stroke="var(--brand-thread, #B4442E)" stroke-width="7.5"/>
+      <circle cx="48" cy="34" r="6.5" fill="var(--brand-thread, #B4442E)"/>
+    </svg>
+    <span>heddled</span>{% if dev_mode %} <span class="badge dev">dev</span>{% endif %}</a>
+  {# Labels are written for whoever has to use this, not for the codebase.
+     The URLs, files and API keep the platform's own vocabulary. #}
+  <a href="/" class="{{ 'on' if request.path == '/' or request.path.startswith('/agents') }}">Agents</a>
+  <a href="/sessions" class="{{ 'on' if request.path.startswith('/sessions') }}">Activity
+    {% if pending_approvals %}<span class="badge warn" title="waiting for your approval">{{ pending_approvals }}</span>{% endif %}
+  </a>
+  <a href="/tools" class="{{ 'on' if request.path.startswith('/tools') }}">Tools</a>
+  <a href="/evals" class="{{ 'on' if request.path.startswith('/evals') }}">Tests</a>
+  <a href="/deployments" class="{{ 'on' if request.path.startswith('/deployments') }}">Publish</a>
+  {% if g.user and g.user.role == 'admin' %}
+  <a href="/users" class="{{ 'on' if request.path.startswith('/users') }}">People</a>
+  <a href="/settings" class="{{ 'on' if request.path.startswith('/settings') }}">Settings</a>
+  {% endif %}
+  <span class="spacer"></span>
+  {% if g.user %}
+  <a href="/account" class="whoami" title="{{ g.user.role }}">{{ g.user.username }}</a>
+  {% endif %}
+  <span class="health"
+        title="Is Heddled running · jobs waiting to be handled · problems in the last hour">
+    <span class="dot {{ 'ok' if health.worker_alive else 'bad' }}"></span>{{ 'running' if health.worker_alive else 'not running' }}
+    {% if health.queue_depth %}<span class="sep">·</span>{{ health.queue_depth }} waiting{% endif %}
+    {% if health.errors_last_hour %}<span class="sep">·</span><b class="bad-text">{{ health.errors_last_hour }} problem{{ 's' if health.errors_last_hour != 1 }}</b>{% endif %}
+  </span>
+</nav>
+<main id="main" class="{% block main_class %}wrap{% endblock %}">
+{% if auth_status.at_risk and request.path != '/settings' %}
+<div class="banner bad">
+  <b>This console has no password</b> and is reachable from the network — anyone who
+  can reach this machine can read every conversation and act as any agent.
+  <a href="/settings">Set a password</a>.
+</div>
+{% endif %}
+{% block body %}{% endblock %}
+
+{# Anchors the page. A screen that simply stops reads as one that failed to
+   finish loading. #}
+<footer class="page-foot">
+  <span class="foot-brand">
+    <svg class="brand-mark" viewBox="0 0 64 64" fill="none" stroke-linecap="square"
+         aria-hidden="true" focusable="false">
+      <g stroke="currentColor" stroke-width="7.5">
+        <path d="M18 6 V26 M18 38 V58"/>
+        <path d="M46 6 V26 M46 38 V58"/>
+        <path d="M6 18 H26 M38 18 H58"/>
+        <path d="M6 50 H26 M38 50 H58"/>
+      </g>
+      <path d="M6 34 H34" stroke="var(--brand-thread, #B4442E)" stroke-width="7.5"/>
+      <circle cx="48" cy="34" r="6.5" fill="var(--brand-thread, #B4442E)"/>
+    </svg>Heddled</span>
+  <span class="sep">·</span>
+  <a href="/settings">Settings</a>
+  <a href="/tools/new">New tool</a>
+  <a href="/agents/new">New agent</a>
+  <span class="spacer"></span>
+  <span>{{ 'everything running' if health.worker_alive else 'not running — start the worker' }}</span>
+</footer>
+</main>
+{# One confirmation for the whole console. The message lives in an attribute,
+   where the template escapes it properly — hand-building a JS string literal
+   inside `onsubmit` breaks as soon as the message contains a quote, and a
+   broken handler submits the form without asking anything. #}
+<script>
+document.addEventListener('submit', e => {
+  const msg = e.target.dataset ? e.target.dataset.confirm : null;
+  if (msg && !window.confirm(msg)) { e.preventDefault(); e.stopPropagation(); }
+}, true);
+
+// Opening the rename panel puts you in the field with the name selected, so it
+// takes one click and typing — and Escape puts you back where you were.
+document.addEventListener('toggle', e => {
+  if (e.target.matches && e.target.matches('details.rename[open]')) {
+    const field = e.target.querySelector('input');
+    if (field) { field.focus(); field.select(); }
+  }
+}, true);
+document.addEventListener('keydown', e => {
+  if (e.key !== 'Escape' || !e.target.closest) return;
+  const panel = e.target.closest('details.rename[open]');
+  if (panel) { panel.open = false; panel.querySelector('summary').focus(); }
+});
+
+// An address you are meant to paste somewhere else should be one click to copy,
+// not a careful drag across a monospace string.
+document.addEventListener('click', async e => {
+  const el = e.target.closest('[data-copy]');
+  if (!el) return;
+  const text = el.dataset.copy || el.textContent.trim();
+  try {
+    await navigator.clipboard.writeText(text);
+    el.dataset.copied = 'yes';
+    setTimeout(() => delete el.dataset.copied, 1200);
+  } catch (err) {
+    // Clipboard access can be refused; selecting it is the next best thing.
+    const range = document.createRange();
+    range.selectNodeContents(el);
+    getSelection().removeAllRanges();
+    getSelection().addRange(range);
+  }
+});
+
+// A screenful of filter dropdowns before you reach any content is not a filter,
+// it is a wall. On a narrow screen they start folded; they ship open so that
+// without JavaScript nothing is hidden.
+if (window.matchMedia('(max-width: 700px)').matches) {
+  document.querySelectorAll('details.filter-panel').forEach(d => {
+    const used = [...d.querySelectorAll('select, input')].some(
+      f => f.value && f.value !== '');
+    if (!used) d.open = false;
+  });
+}
+
+// On a phone each table row becomes a stacked card, and a stacked cell has to
+// say what it is. The label is the column header it came from, applied here so
+// every table gets it without each template repeating itself.
+document.querySelectorAll('table.grid').forEach(table => {
+  const heads = [...table.querySelectorAll('thead th')].length
+    ? [...table.querySelectorAll('thead th')]
+    : [...(table.querySelector('tr') || {children: []}).children].filter(c => c.tagName === 'TH');
+  if (!heads.length) return;
+  const labels = heads.map(h => h.textContent.trim());
+  table.querySelectorAll('tr').forEach(row => {
+    [...row.children].forEach((cell, i) => {
+      if (cell.tagName !== 'TD' || cell.hasAttribute('colspan')) return;
+      if (labels[i]) cell.dataset.label = labels[i];
+    });
+  });
+});
+
+// What is already chosen, shown as removable chips above the picker. Scanning
+// a hundred checkboxes to find the four that are ticked is not reading, it is
+// searching — so the answer is put where the question is.
+function heddledChosen(box) {
+  const list = document.querySelector(box.dataset.chosenFor);
+  if (!list) return;
+  const picked = [...list.querySelectorAll('input[type=checkbox]:checked')];
+  box.replaceChildren();
+  if (!picked.length) {
+    const empty = document.createElement('span');
+    empty.className = 'muted small';
+    empty.textContent = box.dataset.empty || 'Nothing chosen yet.';
+    box.append(empty);
+    return;
+  }
+  picked.forEach(input => {
+    const chip = document.createElement('button');
+    chip.type = 'button';
+    chip.className = 'chosen-chip';
+    chip.title = `Remove ${input.value}`;
+    chip.textContent = input.value.replace(/_/g, ' ');
+    chip.addEventListener('click', () => {
+      input.checked = false;
+      input.dispatchEvent(new Event('change', {bubbles: true}));
+    });
+    box.append(chip);
+  });
+}
+document.querySelectorAll('[data-chosen-for]').forEach(box => {
+  heddledChosen(box);
+  const list = document.querySelector(box.dataset.chosenFor);
+  if (list) list.addEventListener('change', () => heddledChosen(box));
+});
+
+// A list that only offers what another list has chosen. Approving a tool the
+// agent was never given is a question about nothing.
+document.querySelectorAll('[data-mirrors]').forEach(list => {
+  const source = document.querySelector(list.dataset.mirrors);
+  if (!source) return;
+  const empty = document.getElementById('gate-empty');
+  const sync = () => {
+    const chosen = new Set([...source.querySelectorAll('input:checked')].map(i => i.value));
+    let shown = 0;
+    list.querySelectorAll('li').forEach(li => {
+      const input = li.querySelector('input');
+      const keep = input && chosen.has(input.value);
+      li.hidden = !keep;
+      if (!keep && input) input.checked = false;   // never gate what was removed
+      if (keep) shown++;
+    });
+    if (empty) empty.hidden = shown > 0;
+  };
+  source.addEventListener('change', sync);
+  sync();
+});
+
+// Filtering a long tick-list. Hiding a row never unticks it, so what is already
+// chosen still saves — the filter is a way to find things, not to change them.
+function heddledFilter(list) {
+  const box = document.querySelector(`input[data-filters="#${list.id}"]`);
+  const onlyTicked = document.querySelector(`input[data-filter-ticked="#${list.id}"]`);
+  const q = (box ? box.value : '').trim().toLowerCase();
+  const ticked = onlyTicked && onlyTicked.checked;
+  let shown = 0;
+  list.querySelectorAll('li').forEach(li => {
+    const input = li.querySelector('input[type=checkbox]');
+    const hit = (!q || li.textContent.toLowerCase().includes(q))
+                && (!ticked || (input && input.checked));
+    li.hidden = !hit;
+    if (hit) shown++;
+  });
+  const count = box && document.querySelector(box.dataset.filterCount);
+  if (count) {
+    const total = list.querySelectorAll('li').length;
+    count.textContent = shown === total ? `${total} to choose from`
+                                        : `${shown} of ${total}`;
+  }
+}
+document.addEventListener('input', e => {
+  const sel = e.target.dataset && (e.target.dataset.filters || e.target.dataset.filterTicked);
+  if (sel) heddledFilter(document.querySelector(sel));
+});
+document.addEventListener('change', e => {
+  const sel = e.target.dataset && e.target.dataset.filterTicked;
+  if (sel) heddledFilter(document.querySelector(sel));
+});
+document.querySelectorAll('input[data-filters]').forEach(
+  box => heddledFilter(document.querySelector(box.dataset.filters)));
+
+// Publishing, in one place: the agent page and the Publish page used to differ,
+// and the agent page's version could not publish to prod at all — it reported
+// the gate and offered nothing further.
+async function heddledPublish(agent, env) {
+  const send = body => fetch('/api/deployments/promote', {method: 'POST',
+    headers: {'content-type': 'application/json'},
+    body: JSON.stringify(Object.assign({agent, env}, body))});
+  const r = await send({});
+  if (r.ok) { location.reload(); return; }
+  const d = await r.json();
+  if (r.status === 412) {
+    if (!confirm(`${agent} has not passed its tests on this version.\n\n${d.detail}\n\n`
+                 + `Publish to ${env} anyway?`)) return;
+    const forced = await send({force: true});
+    if (forced.ok) { location.reload(); return; }
+    alert((await forced.json()).error || 'Could not publish.');
+    return;
+  }
+  alert(d.error || 'Could not publish.');
+}
+</script>
+{% block scripts %}{% endblock %}
+</body>
+</html>

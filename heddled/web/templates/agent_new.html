@@ -1,0 +1,134 @@
+{% extends "base.html" %}
+{% block title %}New agent · Heddled{% endblock %}
+{% block body %}
+
+<header class="page-head">
+  <h1><a href="/" class="crumb">Agents</a> / New agent</h1>
+</header>
+
+<p class="lede">An agent is an assistant that answers questions and does jobs for you.
+  You tell it how to behave, give it a few things it's allowed to do, and decide what
+  it must ask you about first.</p>
+
+<form method="post" action="/agents" class="wizard">
+
+  <fieldset class="step">
+    <legend>1 · What is it called?</legend>
+    <label>Name
+      <input name="name" required pattern="[a-z][a-z0-9_]*" placeholder="invoice_helper"
+             autocomplete="off"></label>
+    <p class="hint">Lowercase, words joined by underscores. People won't usually see this.</p>
+
+    <label>What does it do?
+      <input name="description" required
+             placeholder="Answers questions about invoices and billing."></label>
+    <p class="hint">One sentence. This is how you'll recognise it in a list later.</p>
+  </fieldset>
+
+  <fieldset class="step">
+    <legend>2 · How should it behave?</legend>
+    <label>Instructions
+      <textarea name="instructions" rows="10" class="prose">{{ starter }}</textarea>
+    </label>
+    <p class="hint">Write it like you're briefing a new colleague on their first day.
+      Say what they handle, what tone to use, and — most usefully — what to do when
+      they don't know the answer.</p>
+  </fieldset>
+
+  <fieldset class="step">
+    <legend>3 · What is it allowed to do?</legend>
+    {% if all_tools %}
+    <p class="hint">Tick the things this agent may use. It decides for itself when each
+      one is needed.</p>
+    <div class="chosen" id="new-tools-chosen" data-chosen-for="#new-tools"
+         data-empty="Nothing yet — it will answer from its instructions alone."></div>
+    <details class="picker" {{ 'open' if all_tools | length <= 8 }}>
+      <summary><span class="picker-verb">Choose from your tools</span>
+        <span class="muted small">{{ all_tools | length }} to choose from</span></summary>
+      {% if all_tools | length > 8 %}
+      <div class="list-filter">
+        <label class="sr-only" for="new-tool-filter">Find a tool</label>
+        <input id="new-tool-filter" type="search" placeholder="Find a tool…"
+               autocomplete="off" data-filters="#new-tools" data-filter-count="#new-tool-count">
+        <label class="check inline"><input type="checkbox" data-filter-ticked="#new-tools">
+          <span>only what's ticked</span></label>
+        <span id="new-tool-count" class="muted small"></span>
+      </div>
+      {% endif %}
+      <ul class="checks {{ 'scroll' if all_tools | length > 12 }}" id="new-tools">
+        {% for name, tool in all_tools.items() %}
+        <li>
+          <label class="check">
+            <input type="checkbox" name="tools" value="{{ name }}">
+            <span><b>{{ name }}</b> <span class="muted small">{{ tool.description }}</span></span>
+          </label>
+        </li>
+        {% endfor %}
+      </ul>
+    </details>
+    <p class="hint"><a href="/tools/new">Create another tool</a> if what you need isn't
+      here — you can always add it to this agent afterwards.</p>
+    {% else %}
+    <p class="hint">You haven't made any tools yet. That's fine — an agent with no tools
+      can still answer questions from its instructions.
+      <a href="/tools/new">Make its first tool</a> whenever you're ready.</p>
+    {% endif %}
+  </fieldset>
+
+  <fieldset class="step">
+    <legend>4 · What should it check with you first?</legend>
+    {% if all_tools %}
+    <p class="hint">Anything ticked here pauses and waits for a person to approve it.
+      Use this for actions that spend money, send things to customers, or can't be undone.
+      You'll get a link — you don't have to sit in this screen.</p>
+    {# Only what the agent will actually have. Offering a gate on a tool it was
+       never given is a question about nothing, and hid the real choices among
+       three hundred irrelevant ones. #}
+    <ul class="checks" id="gate-tools" data-mirrors="#new-tools">
+      {% for name, tool in all_tools.items() %}
+      <li hidden><label class="check">
+        <input type="checkbox" name="approval_tools" value="{{ name }}">
+        <span>Ask me before <b>{{ name }}</b></span></label></li>
+      {% endfor %}
+    </ul>
+    <p class="hint" id="gate-empty">Pick what it can do in step 3 first, then choose
+      which of those need your approval.</p>
+    {% else %}
+    <p class="hint">Nothing to approve yet — this appears once the agent has tools.</p>
+    {% endif %}
+  </fieldset>
+
+  <fieldset class="step">
+    <legend>5 · Which model should it use?</legend>
+    <label>Model
+      <select name="model">
+        {% for g in model_groups %}
+        <optgroup label="{{ g.label }}{{ '' if g.ready else ' — needs a key' }}">
+          {% for m in g.models %}
+          <option value="{{ m }}" {{ 'selected' if m == 'mock/echo' }}>{{ m }}</option>
+          {% endfor %}
+        </optgroup>
+        {% endfor %}
+      </select>
+    </label>
+    <p class="hint">
+      {% if not has_model_key %}
+      <b>mock/echo</b> is a stand-in that needs no account — good for trying this out.
+      To use a real model, add a key for that service under
+      <a href="/settings">Settings</a> first. OpenAI, DeepSeek, Groq, Mistral and
+      others each take their own key, and you can have several at once.
+      {% else %}
+      Services marked <b>needs a key</b> won't run until you add one under
+      <a href="/settings">Settings</a>. You can change this at any time.
+      {% endif %}
+    </p>
+  </fieldset>
+
+  <div class="row">
+    <a class="btn" href="/">Cancel</a>
+    <button class="btn primary" type="submit">Create agent</button>
+  </div>
+  <p class="hint">You'll land straight in a chat window to try it out.</p>
+</form>
+
+{% endblock %}

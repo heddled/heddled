@@ -1,0 +1,21 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 64 64" fill="none"
+     stroke-linecap="square" role="img" aria-label="Heddled">
+  <title>Heddled</title>
+  <!-- Cloth on the loom, mid-weave: the weft stops at a node and continues
+       dashed. Structure takes currentColor so it works on any background; the
+       one coloured thread is madder. 64 unit box · 12 unit pitch · 4.5 thread. -->
+  <g stroke="currentColor" stroke-width="4.5">
+    <path d="M14 6 V10 M14 18 V34 M14 42 V58"/>
+    <path d="M26 6 V22 M26 30 V46 M26 54 V58"/>
+    <path d="M38 6 V10 M38 18 V34 M38 42 V58"/>
+    <path d="M50 6 V22 M50 30 V46 M50 54 V58"/>
+    <path d="M6 14 H22 M30 14 H46 M54 14 H58"/>
+    <path d="M6 26 H10 M18 26 H34 M42 26 H58"/>
+    <path d="M6 50 H10 M18 50 H34 M42 50 H58"/>
+  </g>
+  <path d="M6 38 H22 M30 38 H38" stroke="#B4442E" stroke-width="4.5"/>
+  <path d="M49 38 H62" stroke="#B4442E" stroke-width="4.5"
+        stroke-dasharray="1.5 5.5" stroke-linecap="round"/>
+  <circle cx="43.5" cy="38" r="4.2" fill="var(--brand-node, #F9F7F3)"
+          stroke="#B4442E" stroke-width="3.4"/>
+</svg>

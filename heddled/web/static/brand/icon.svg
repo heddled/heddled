@@ -1,0 +1,17 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 64 64" fill="none"
+     stroke-linecap="square" role="img" aria-label="Heddled">
+  <title>Heddled</title>
+  <!-- The app icon and favicon: fixed colours, because a browser tab has no
+       theme to inherit from. -->
+  <rect width="64" height="64" rx="15" fill="#1A1917"/>
+  <g transform="translate(32 32) scale(0.74) translate(-32 -32)">
+    <g stroke="#F9F7F3" stroke-width="7.5">
+      <path d="M18 6 V26 M18 38 V58"/>
+      <path d="M46 6 V26 M46 38 V58"/>
+      <path d="M6 18 H26 M38 18 H58"/>
+      <path d="M6 50 H26 M38 50 H58"/>
+    </g>
+    <path d="M6 34 H34" stroke="#B4442E" stroke-width="7.5"/>
+    <circle cx="48" cy="34" r="6.5" fill="#B4442E"/>
+  </g>
+</svg>

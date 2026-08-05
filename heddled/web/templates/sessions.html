@@ -1,0 +1,80 @@
+{% extends "base.html" %}
+{% import "_paging.html" as paging_ui %}
+{% block title %}Activity · Heddled{% endblock %}
+{% block body %}
+<h1>Activity</h1>
+<p class="muted">Every conversation this Heddled has had — from the chat window, from another
+  system, or started on a schedule. Click one to see what the agent did and why.</p>
+<details class="filter-panel" open>
+  <summary>Filter</summary>
+<form class="filters" method="get">
+  <select name="agent" aria-label="Filter by agent"><option value="">all agents</option>
+    {% for a in agents %}<option value="{{ a }}" {{ 'selected' if filters.get('agent') == a }}>{{ a }}</option>{% endfor %}
+  </select>
+  <select name="status" aria-label="Filter by outcome"><option value="">any outcome</option>
+    {% for s in statuses %}<option value="{{ s }}" {{ 'selected' if filters.get('status') == s }}>{{ s }}</option>{% endfor %}
+  </select>
+  <select name="channel" aria-label="Filter by where it happened"><option value="">anywhere</option>
+    {% for c in channels %}<option value="{{ c }}" {{ 'selected' if filters.get('channel') == c }}>{{ c }}</option>{% endfor %}
+  </select>
+  <select name="origin" aria-label="Filter by what started it"><option value="">started by anything</option>
+    {% for o in ['webchat','webhook','schedule','poll','mcp','agent','eval'] %}
+      <option value="{{ o }}" {{ 'selected' if filters.get('origin') == o }}>{{ o }}</option>{% endfor %}
+  </select>
+  <select name="env" aria-label="Filter by environment"><option value="">every environment</option>
+    {% for e in environments %}
+      <option value="{{ e }}" {{ 'selected' if filters.get('env') == e }}>{{ e }}</option>{% endfor %}
+  </select>
+  <button class="btn" type="submit">Filter</button>
+  <a class="btn tiny" href="/sessions?status=waiting-approval">needs your approval
+    {% if pending_approvals %}({{ pending_approvals }}){% endif %}</a>
+</form>
+</details>
+
+<table class="grid">
+  <thead><tr><th>Conversation</th><th>Where</th><th>Agent</th><th>Started by</th><th>Outcome</th>
+    <th>Started</th><th>Last activity</th><th>About</th></tr></thead>
+  <tbody>
+  {% for s in sessions %}
+    {# Real traffic should not look like a trial run. A prod row is marked; dev
+       is the quiet default, because most of what you see is dev. #}
+    <tr class="env-{{ s['env'] or 'dev' }}">
+      <td class="mono small"><a href="/sessions/{{ s['id'] }}">{{ s['id'][:16] }}…</a></td>
+      <td><span class="env-tag env-{{ s['env'] or 'dev' }}">{{ s['env'] or 'dev' }}</span></td>
+      <td><a href="/agents/{{ s['agent'] }}">{{ s['agent'] }}</a>
+        <span class="muted small mono">{{ (s['agent_version'] or '')[:8] }}</span></td>
+      <td><span class="badge">{{ origin_words.get(s['channel'], s['channel']) }}</span></td>
+      <td><span class="status {{ s['status'] }}">{{ status_words.get(s['status'], s['status']) }}</span></td>
+      <td class="small muted">{{ s['created_at'] | ago }}</td>
+      <td class="small muted">{{ s['updated_at'] | ago }}</td>
+      <td class="small">{{ s['title'] or '' }}</td>
+    </tr>
+  {% else %}
+  <tr><td colspan="8">
+    {# "no sessions match" could not tell an empty console from a filter that
+       found nothing, and offered a way out of neither. #}
+    {% if filters.get('agent') or filters.get('status') or filters.get('channel')
+          or filters.get('origin') or filters.get('env') %}
+    <div class="onboard compact">
+      <p><b>Nothing matches those filters.</b></p>
+      <p class="muted">There may still be conversations under a different agent,
+        outcome or environment.</p>
+      <a class="btn" href="/sessions">Show everything</a>
+    </div>
+    {% elif paging.page > 1 %}
+    <p class="muted">Nothing this far back.
+      <a href="?{{ dict(paging.base_args, page=1) | urlencode }}">Back to the newest</a>.</p>
+    {% else %}
+    <div class="onboard compact">
+      <p><b>No conversations yet.</b> This is where every conversation ends up —
+        yours from the chat window, and the ones your agents start on their own.</p>
+      <p class="muted">Open an agent and press <b>Try it</b> to have the first one.</p>
+      <a class="btn primary" href="/">Go to your agents</a>
+    </div>
+    {% endif %}
+  </td></tr>
+  {% endfor %}
+  </tbody>
+</table>
+{{ paging_ui.stream_pager(paging, 'conversation') }}
+{% endblock %}

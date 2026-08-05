@@ -1,0 +1,72 @@
+{% extends "base.html" %}
+{% import "_paging.html" as paging_ui %}
+{% block title %}Agents · Heddled{% endblock %}
+{% block body %}
+<header class="page-head">
+  <h1>Agents</h1>
+  <a class="btn primary" href="/agents/new">+ New agent</a>
+</header>
+{% if deleted %}
+<div class="banner ok"><p><b>{{ deleted }}</b> is gone.
+  {% if unmounted %}It was taken off {{ unmounted | join(', ') }}, which can no longer
+  hand work to it.{% endif %}</p></div>
+{% endif %}
+{% if not total_agents %}
+<div class="onboard">
+  <h2>Nothing here yet — here's the shape of it</h2>
+  <ol class="steps">
+    <li><b>Make a tool</b> — one thing your agent is allowed to do: look something up
+      in a list, call an API, send a message.
+      <a class="btn tiny" href="/tools/new">Make a tool</a></li>
+    <li><b>Make an agent</b> — tell it how to behave and tick the tools it may use.
+      <a class="btn tiny" href="/agents/new">Make an agent</a></li>
+    <li><b>Chat with it</b> to see how it does, and mark anything risky as
+      "ask me first".</li>
+  </ol>
+  <p class="muted">You don't need an account with a model provider to try this — the
+    built-in <b>mock/echo</b> stand-in works offline.</p>
+</div>
+{% else %}
+<p class="muted">Each agent is an assistant you've set up. Click one to change how it
+  behaves, or to chat with it.</p>
+{{ paging_ui.search(q, 'name, description or model', total_agents, 'agent') }}
+{% endif %}
+
+
+<table class="grid">
+  <thead>
+    <tr><th>Agent</th><th>Can do</th><th>Checks with you</th>
+      <th>Chats today</th><th>Published</th><th>Model</th></tr>
+  </thead>
+  <tbody>
+  {% for r in rows %}
+    <tr>
+      <td><a href="/agents/{{ r.agent.name }}"><b>{{ r.agent.name }}</b></a>
+        {% if r.agent.expose.get('mcp') %}<span class="badge" title="exposed as an MCP server">mcp</span>{% endif %}
+        {% if r.agent.description %}<div class="muted small">{{ r.agent.description }}</div>{% endif %}
+      </td>
+      <td>{{ r.tools | length }} thing{{ 's' if r.tools | length != 1 }}</td>
+      <td>
+        {% if r.gated %}<span class="badge warn">{{ r.gated }} need{{ '' if r.gated != 1 else 's' }} approval</span>
+        {% else %}<span class="muted">nothing</span>{% endif %}
+      </td>
+      <td>{{ r.sessions_24h or '—' }}</td>
+      <td class="small">
+        {% set live = r.deployments.values() | selectattr('env') | list %}
+        {% if live %}
+          {% for d in live %}<span class="badge {{ 'ok' if d['version'] == r.agent.version else 'warn' }}"
+             title="{{ 'up to date' if d['version'] == r.agent.version else 'you have edited it since' }}"
+            >{{ d['env'] }}</span>{% endfor %}
+        {% else %}<span class="muted">not yet</span>{% endif %}
+      </td>
+      <td class="mono small muted">{{ r.agent.model }}</td>
+    </tr>
+  {% else %}
+    <tr><td colspan="6" class="muted">
+      {% if q %}No agent matches <b>{{ q }}</b>. <a href="?">Show them all</a>.
+      {% else %}No agents yet.{% endif %}</td></tr>
+  {% endfor %}
+  </tbody>
+</table>
+{{ paging_ui.pager(paging, 'agent') }}
+{% endblock %}

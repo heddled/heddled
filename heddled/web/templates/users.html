@@ -1,0 +1,139 @@
+{% extends "base.html" %}
+{% import "_paging.html" as paging_ui %}
+{% block title %}People · Heddled{% endblock %}
+{% block body %}
+
+<h1>People</h1>
+<p class="muted">Everyone who can open this console, and what each of them may do.</p>
+
+{% if error %}<div class="banner bad">{{ error }}</div>{% endif %}
+{% if saved %}<div class="banner ok">{{ saved }}</div>{% endif %}
+
+<section class="card">
+  <table class="grid">
+    <thead><tr><th>Who</th><th>Can do</th><th>Last signed in</th><th></th></tr></thead>
+    <tbody>
+    {% for person in people %}
+      <tr {{ 'class=suspended' if not person.active }}>
+        <td>
+          <b>{{ person.username }}</b>
+          {% if me and person.username == me.username %}<span class="badge">you</span>{% endif %}
+          {% if not person.active %}<span class="badge bad">suspended</span>{% endif %}
+          {% if person.display_name %}<div class="muted small">{{ person.display_name }}</div>{% endif %}
+        </td>
+        <td>
+          <form method="post" action="/users" class="inline">
+            <input type="hidden" name="action" value="role">
+            <input type="hidden" name="username" value="{{ person.username }}">
+            <select name="role" onchange="this.form.submit()" aria-label="Role for {{ person.username }}">
+              {% for role in roles %}
+              <option value="{{ role }}" {{ 'selected' if person.role == role }}>{{ role }}</option>
+              {% endfor %}
+            </select>
+          </form>
+          <div class="muted small">{{ role_words[person.role] }}</div>
+        </td>
+        <td class="small muted">{{ person.last_login | ago if person.last_login else 'never' }}</td>
+        <td class="row-actions">
+          <details class="inline-menu">
+            <summary class="btn tiny">…</summary>
+            <div class="menu">
+              <form method="post" action="/users">
+                <input type="hidden" name="action" value="passwd">
+                <input type="hidden" name="username" value="{{ person.username }}">
+                <input name="password" type="password" placeholder="new password" required
+                       aria-label="New password for {{ person.username }}">
+                <input name="confirm" type="password" placeholder="repeat it" required
+                       aria-label="Repeat the new password">
+                <button class="btn tiny" type="submit">Set password</button>
+              </form>
+              {% if person.active %}
+              <form method="post" action="/users">
+                <input type="hidden" name="action" value="suspend">
+                <input type="hidden" name="username" value="{{ person.username }}">
+                <button class="btn tiny" type="submit">Suspend</button>
+              </form>
+              {% else %}
+              <form method="post" action="/users">
+                <input type="hidden" name="action" value="restore">
+                <input type="hidden" name="username" value="{{ person.username }}">
+                <button class="btn tiny" type="submit">Let back in</button>
+              </form>
+              {% endif %}
+              <form method="post" action="/users"
+                    data-confirm="Remove {{ person.username }}? Their record of what they did is kept.">
+                <input type="hidden" name="action" value="remove">
+                <input type="hidden" name="username" value="{{ person.username }}">
+                <button class="btn tiny danger" type="submit">Remove</button>
+              </form>
+            </div>
+          </details>
+        </td>
+      </tr>
+    {% endfor %}
+    </tbody>
+  </table>
+</section>
+
+<section class="card">
+  <h2>Add somebody</h2>
+  <form method="post" action="/users">
+    <input type="hidden" name="action" value="create">
+    <div class="field-grid">
+      <label>Username
+        <input name="username" required pattern="[a-zA-Z0-9._\-]{2,32}"></label>
+      <label>Their name <span class="muted">(optional)</span>
+        <input name="display_name"></label>
+      <label>Can do
+        <select name="role">
+          {% for role in roles %}
+          <option value="{{ role }}" {{ 'selected' if role == 'member' }}>{{ role_words[role] }}</option>
+          {% endfor %}
+        </select>
+      </label>
+      <label>First password
+        <input name="password" type="password" required autocomplete="new-password"></label>
+      <label>Repeat it
+        <input name="confirm" type="password" required autocomplete="new-password"></label>
+    </div>
+    <div class="row"><button class="btn primary" type="submit">Add</button></div>
+    <p class="hint">Give them the password however you normally would. They can change
+      it themselves from <a href="/account">their own account page</a>.</p>
+  </form>
+</section>
+
+<section class="card">
+  <h2>What people have done</h2>
+  <p class="muted small">Changes to Heddled itself. What the <em>agents</em> did is under
+    <a href="/sessions">Activity</a>.</p>
+  <details class="filter-panel" open>
+    <summary>Filter</summary>
+    <form class="filters" method="get">
+      <select name="action" aria-label="Filter by kind of change">
+        <option value="">everything</option>
+        {% for a in audit_actions %}
+        <option value="{{ a }}" {{ 'selected' if audit_filter == a }}>{{
+          a.replace('.', ' ') }}</option>
+        {% endfor %}
+      </select>
+      <button class="btn" type="submit">Filter</button>
+      {% if audit_filter %}<a class="btn tiny" href="/users">clear</a>{% endif %}
+    </form>
+  </details>
+  <table class="grid tight audit-table">
+    <thead><tr><th>When</th><th>Who</th><th>What</th><th>To</th></tr></thead>
+    <tbody>
+    {% for entry in audit %}
+      <tr>
+        <td class="small muted">{{ entry.ts | ts }}</td>
+        <td class="small">{{ entry.username or '—' }}</td>
+        <td class="small">{{ entry.action.replace('.', ' ') }}</td>
+        <td class="small muted">{{ entry.target or '' }}</td>
+      </tr>
+    {% else %}<tr><td colspan="4" class="muted">Nothing recorded yet.</td></tr>
+    {% endfor %}
+    </tbody>
+  </table>
+  {{ paging_ui.stream_pager(paging, 'entry') }}
+</section>
+{% endblock %}

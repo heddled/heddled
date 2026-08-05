@@ -1,0 +1,9 @@
+{% extends "base.html" %}
+{% block title %}Error · Heddled{% endblock %}
+{% block body %}
+<div class="empty">
+  <h1>{{ code or 'Error' }}</h1>
+  <pre class="payload err">{{ message }}</pre>
+  <p><a href="/">← back to agents</a></p>
+</div>
+{% endblock %}

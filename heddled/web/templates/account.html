@@ -1,0 +1,31 @@
+{% extends "base.html" %}
+{% block title %}Your account · Heddled{% endblock %}
+{% block body %}
+<h1>Your account</h1>
+<p class="muted">Signed in as <b>{{ me.username }}</b> — {{ me.role }}.</p>
+
+{% if error %}<div class="banner bad">{{ error }}</div>{% endif %}
+{% if saved %}<div class="banner ok">{{ saved }}</div>{% endif %}
+
+<section class="card">
+  <h2>Change your password</h2>
+  <form method="post" action="/account">
+    <div class="field-grid">
+      <label>Current password
+        <input name="current" type="password" required autocomplete="current-password"></label>
+      <label>New password
+        <input name="password" type="password" required autocomplete="new-password"></label>
+      <label>Repeat it
+        <input name="confirm" type="password" required autocomplete="new-password"></label>
+    </div>
+    <div class="row"><button class="btn primary" type="submit">Change it</button></div>
+  </form>
+</section>
+
+<section class="card">
+  <h2>Sign out</h2>
+  <form method="post" action="/logout">
+    <button class="btn" type="submit">Sign out of Heddled</button>
+  </form>
+</section>
+{% endblock %}

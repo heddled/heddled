@@ -1,0 +1,62 @@
+{# A pager and a search box, shared by every list screen so they behave the same.
+   Both are plain GET forms and links: no JavaScript, so a page is a URL you can
+   bookmark, share, or open in a new tab. #}
+
+{% macro search(q, placeholder, total, noun) %}
+<form class="list-search" method="get" role="search">
+  <label class="sr-only" for="list-q">Search {{ noun }}</label>
+  <input id="list-q" name="q" value="{{ q or '' }}" placeholder="{{ placeholder }}"
+         type="search" autocomplete="off">
+  <button class="btn" type="submit">Search</button>
+  {% if q %}<a class="btn tiny" href="?">clear</a>{% endif %}
+  <span class="muted small">{{ total }} {{ noun }}{{ '' if total == 1 else 's' }}</span>
+</form>
+{% endmacro %}
+
+{# For lists that only grow — the trace store — where counting every row to
+   render a page number is work nobody asked for. #}
+{% macro stream_pager(paging, noun) %}
+{% if paging.page > 1 or paging.has_next %}
+<div class="pager">
+  <span class="muted small">{{ paging.first }}–{{ paging.last }} {{ noun }}s</span>
+  <span class="pager-links">
+    {% if paging.page > 1 %}
+    <a class="btn tiny" href="?{{ dict(paging.base_args, page=1) | urlencode }}">newest</a>
+    <a class="btn tiny"
+       href="?{{ dict(paging.base_args, page=paging.page - 1) | urlencode }}">newer</a>
+    {% endif %}
+    <span class="muted small">page {{ paging.page }}</span>
+    {% if paging.has_next %}
+    <a class="btn tiny"
+       href="?{{ dict(paging.base_args, page=paging.page + 1) | urlencode }}">older</a>
+    {% endif %}
+  </span>
+</div>
+{% endif %}
+{% endmacro %}
+
+{% macro pager(paging, noun) %}
+{% if paging.total %}
+<div class="pager">
+  <span class="muted small">
+    {{ paging.first }}–{{ paging.last }} of {{ paging.total }} {{ noun }}{{
+      '' if paging.total == 1 else 's' }}</span>
+  {% if paging.pages > 1 %}
+  <span class="pager-links">
+    {% if paging.page > 1 %}
+    <a class="btn tiny" href="?{{ dict(paging.base_args, page=1) | urlencode }}">first</a>
+    <a class="btn tiny"
+       href="?{{ dict(paging.base_args, page=paging.page - 1) | urlencode }}">previous</a>
+    {% endif %}
+    <span class="muted small">page {{ paging.page }} of {{ paging.pages }}</span>
+    {% if paging.page < paging.pages %}
+    <a class="btn tiny"
+       href="?{{ dict(paging.base_args, page=paging.page + 1) | urlencode }}">next</a>
+    <a class="btn tiny"
+       href="?{{ dict(paging.base_args, page=paging.pages) | urlencode }}">last</a>
+    {% endif %}
+  </span>
+  {% endif %}
+</div>
+{% endif %}
+{% endmacro %}

@@ -1,0 +1,61 @@
+{# First run. Until somebody completes this, nothing else in Heddled is reachable. #}
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Set up Heddled</title>
+<link rel="stylesheet" href="{{ url_for('static', filename='console.css') }}">
+<link rel="icon" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 16 16'><text y='13' font-size='13'>🧵</text></svg>">
+</head>
+<body class="standalone">
+<main class="ask">
+  <h1>🧵 Welcome to Heddled</h1>
+  <p class="lede">Nobody has claimed this Heddled yet. Make yourself the administrator
+    and you're in.</p>
+
+  {% if error %}<div class="banner bad">{{ error }}</div>{% endif %}
+
+  {% if legacy_password %}
+  <div class="banner warn">
+    This Heddled already had a shared console password. Enter it below to prove the
+    console is yours, and it will be replaced by your account.
+  </div>
+  {% endif %}
+
+  <form method="post" action="/setup">
+    {% if legacy_password %}
+    <label for="existing">Current shared password</label>
+    <input id="existing" name="existing" type="password" required
+           autocomplete="current-password">
+    {% endif %}
+
+    <label for="username">Your username</label>
+    <input id="username" name="username" required autofocus autocomplete="username"
+           pattern="[a-zA-Z0-9._\-]{2,32}" value="{{ username or '' }}">
+    <p class="hint">Letters, digits, dots, dashes or underscores.</p>
+
+    <label for="display_name">Your name <span class="muted">— optional</span></label>
+    <input id="display_name" name="display_name" autocomplete="name"
+           placeholder="shown next to things you approve">
+
+    <label for="password">Password</label>
+    <input id="password" name="password" type="password" required
+           autocomplete="new-password">
+    <p class="hint">At least 10 characters. A short sentence is easier to remember
+      and harder to guess than a mangled word.</p>
+
+    <label for="confirm">Repeat it</label>
+    <input id="confirm" name="confirm" type="password" required
+           autocomplete="new-password">
+
+    <div class="ask-actions">
+      <button class="btn primary big" type="submit">Create my account</button>
+    </div>
+  </form>
+
+  <p class="muted small">You'll be able to add colleagues afterwards, and give each
+    of them the run of the place, the ability to build agents, or read-only access.</p>
+</main>
+</body>
+</html>

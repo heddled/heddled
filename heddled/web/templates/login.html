@@ -1,0 +1,35 @@
+{# Standalone, like the approval page: nothing to explore before you are in. #}
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Sign in · Heddled</title>
+<link rel="stylesheet" href="{{ url_for('static', filename='console.css') }}">
+<link rel="icon" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 16 16'><text y='13' font-size='13'>🧵</text></svg>">
+</head>
+<body class="standalone">
+<main class="ask">
+  <h1>🧵 Heddled</h1>
+  <p class="lede">Sign in to continue.</p>
+
+  {% if error %}<div class="banner bad">{{ error }}</div>{% endif %}
+
+  <form method="post" action="/login">
+    <input type="hidden" name="next" value="{{ next_url }}">
+    <label for="username">Username</label>
+    <input id="username" name="username" autocomplete="username" autofocus required>
+
+    <label for="password">Password</label>
+    <input id="password" name="password" type="password" autocomplete="current-password"
+           required>
+    <div class="ask-actions">
+      <button class="btn primary big" type="submit">Sign in</button>
+    </div>
+  </form>
+
+  <p class="muted small">Forgotten it? An administrator can reset it for you, or
+    whoever runs the server can with <code>heddled user passwd &lt;you&gt;</code>.</p>
+</main>
+</body>
+</html>

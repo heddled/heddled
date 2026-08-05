@@ -1,0 +1,9 @@
+name: refund
+description: Issue a refund against an invoice. Requires human approval by policy.
+input:
+  invoice_number: string
+  amount_eur: number
+  reason: string?
+output: { refund_id: string, status: string }
+handler: ./handler.py
+cost_eur: 0            # per-call platform cost, if you meter one
