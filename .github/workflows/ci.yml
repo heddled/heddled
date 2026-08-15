@@ -66,12 +66,25 @@ jobs:
             sleep 1
           done
 
+          # Health is deliberately open — it is what a monitor polls.
           curl -sf localhost:5005/api/health | tee /dev/stderr | grep -q '"worker_alive":true'
-          curl -sf localhost:5005/ >/dev/null
+
+          # Everything else refuses until somebody claims the console, which is
+          # the behaviour worth asserting before authenticating past it.
+          test "$(curl -s -o /dev/null -w '%{http_code}' localhost:5005/api/agents)" = 503
+
+          PW="$(openssl rand -hex 16)"
+          docker exec heddled-ci heddled user add ci --role admin --password "$PW"
+          AUTH="Authorization: Bearer ci:$PW"
+
+          # The console renders for a signed-in request, rather than bouncing
+          # to /login — a bare `curl /` passes on that redirect and proves
+          # nothing.
+          curl -sf -H "$AUTH" localhost:5005/ | grep -q "<title>"
 
           # A full turn, end to end, inside the container.
           curl -sf -X POST localhost:5005/api/agents/support/messages \
-            -H 'content-type: application/json' \
+            -H 'content-type: application/json' -H "$AUTH" \
             -d '{"text":"where is invoice F-2231?","sync":true}' \
             | tee /dev/stderr | grep -q '"status": *"completed"'
 
