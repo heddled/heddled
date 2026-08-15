@@ -3,90 +3,65 @@
   Heddled
 </h1>
 
-**Run AI assistants on your own machine, and see everything they do.**
+Self-hosted platform for AI agents. Agents, tools and policies are files on disk; the web console is a lossless view over those same files. Every turn is recorded as a structured event stream — the log that resumption, the trace viewer, evals and OTel export all read.
 
-Give one a job — look up an invoice, deal with what lands in a shared mailbox, send the summary every morning at eight — and it gets on with it. Anything you would rather sign off yourself, it stops and asks. Every step it took is written down, and still there months later.
-
-You set it up in a browser, mostly without writing code. It runs in one container on a machine you control, works with any major AI provider or a model on your own hardware, and there is no account to sign up for.
+Python 3.10+, Flask, SQLite. One container. No SPA, no build step, no message broker.
 
 [![CI](https://github.com/heddled/heddled/actions/workflows/ci.yml/badge.svg)](https://github.com/heddled/heddled/actions/workflows/ci.yml)
 [![Python 3.10+](https://img.shields.io/badge/python-3.10%2B-blue)](https://www.python.org/downloads/)
 [![License: Apache-2.0](https://img.shields.io/badge/license-Apache--2.0-green)](LICENSE)
 
-[**heddled.com**](https://heddled.com) · [**Documentation**](https://heddled.com/docs.html) · [**Install**](#install)
+[heddled.com](https://heddled.com) · [Documentation](https://heddled.com/docs.html)
 
 <picture>
   <source media="(prefers-color-scheme: dark)" srcset="docs/console-dark.webp">
-  <img src="docs/console-light.webp" alt="A conversation written out in plain words: someone asks whether an invoice was paid, the assistant uses a lookup tool, gets back the status and amount, and replies with the details.">
+  <img src="docs/console-light.webp" alt="The console showing one conversation step by step: the question, the tool call, what it returned, and the reply.">
 </picture>
 
 ## Install
 
 ```bash
 curl -fsSL https://heddled.com/install.sh | sh      # macOS, Linux
-irm https://heddled.com/install.ps1 | iex          # Windows, in PowerShell
+irm https://heddled.com/install.ps1 | iex          # Windows, PowerShell
 ```
 
-Checks for Docker, offers to install it if it is missing, and starts Heddled on http://localhost:5005. Both scripts are plain files — read them first if you would rather; they ask before installing anything and will not write over an existing checkout.
+Checks for Docker, fetches Heddled, starts it on `http://localhost:5005`. From a checkout, `docker compose up` does the same. `model: mock/echo` is a built-in deterministic provider, so no API key is needed to try it.
 
-There is a built-in stand-in model, so you can follow the whole [walkthrough](https://heddled.com/docs.html) — build an assistant, watch it work, approve something — without an API key.
+```bash
+pip install -e .          # the `heddled` command
+heddled init              # scaffold an example agent + tools
+heddled dev               # console + live trace pane
+./heddled-cli dev         # or from a checkout, no install step
 
-## What people build with it
+HEDDLED_WEB_ONLY=1 docker compose --profile split up   # worker as its own process
+```
 
-- **A shared mailbox that answers itself.** Invoices, order queries, the same five questions — handled, with a ticket raised for anything it cannot finish.
-- **The eight o'clock job.** Check what is overdue, pull the numbers, post the summary where people already look.
-- **A front door for another system.** Something posts a webhook; the assistant checks your database, decides, and calls back — under rules you set.
-- **A colleague who knows your systems.** Ask a question in plain words, get an answer from your actual records rather than a guess.
+## Overview
 
-## Why this one
+| | |
+|---|---|
+| **Definitions** | YAML + Markdown on disk. Console reads and writes the same files, comment-preserving. Optional commit-on-save. |
+| **Tools** | HTTP, lookup table, fixed value, text template, webhook, email — from a form. Or Python: `handle(args, ctx)`. Or a remote MCP server. |
+| **Triggers** | Cron schedules and interval pollers (folder, mailbox) in a background worker; webhooks and inbound MCP as channel adapters. |
+| **Policies** | Approval gates, daily/session budgets, token caps, rate limits, pattern redaction, caller and channel allow/deny. Enforced by the platform, not the prompt. |
+| **Approvals** | A gated tool pauses the turn and emits `approval.requested`; routed to Slack, webhook or signed email links. The turn resumes at that exact point, across restarts. |
+| **Observability** | 13-event contract per turn, each carrying `session_id`, `turn_id`, `agent_version`, sequence number. Live SSE trace, historical replay, OTLP export. |
+| **Evals** | Promote any recorded session to a golden trace; replay it against a candidate version with tools mocked. Assertions: exact, contains, regex, similar, LLM-judge. |
+| **Versions** | Version = sha256 of definition + instructions. Bind one to `dev`/`staging`/`prod`; deploys gate on a green eval run. |
+| **Multi-agent** | Mount an agent as a tool (`agent:billing`) with depth and cycle protection; expose an agent as an MCP server. |
+| **Models** | Anthropic, plus any OpenAI-compatible service with its own key and base URL — OpenAI, DeepSeek, Groq, Mistral, Together, OpenRouter, Ollama, vLLM. |
+| **Storage** | SQLite in WAL mode: events, sessions, state, job queue, cursors, approvals, deployments, users. Contexts pruned after 90 days by default. |
+| **Auth** | Local accounts with roles; API keys per external MCP caller, so policies can key on which caller is asking. |
 
-**You can see what it did.** Every run is written down step by step: what it was asked, what it looked up, what came back, what it decided. Not a log you have to grep — a page you can read, months later.
+## Architecture
 
-**It stops before doing anything you would rather approve.** Mark an action and the run pauses until a person decides. That pause is enforced by the platform, not requested of the model, so it cannot be talked out of it. Approve it and the run carries on from exactly where it stopped — days later, across a restart.
-
-**It stays yours.** Every assistant, tool and rule is a plain file in a folder you own. Copy it, back it up, put it in git. There is no database to export and no format that only Heddled can read.
-
-That last one has a consequence worth seeing. Here is somebody ticking a box in the browser to require approval on an action — and the entire diff it produced:
-
-<picture>
-  <source media="(prefers-color-scheme: dark)" srcset="docs/diff-dark.webp">
-  <img src="docs/diff-light.webp" alt="git diff on an assistant's file showing two added lines that require approval for the create_ticket action. Nothing else in the file changed — comments, key order and formatting are exactly as they were written.">
-</picture>
-
-Comments, ordering and formatting survive untouched, so changes to what your AI is allowed to do can go through review like any other change. Turn on commit-on-save and `git log` becomes the history of who changed what.
-
-**Built for a small team with real systems to connect to.** One container, SQLite, no SPA, no build step, no message broker. Not a multi-tenant SaaS, and not trying to be.
-
-## From the terminal, if you prefer
+One **spine**: a structured event stream every turn flows through. Everything else is an **adapter** (moves messages in and out — tools and channels alike) or a **consumer** (observes the stream — trace viewer, console, eval runner, OTel exporter). Resumption reads the same log the audit reads, so execution state and the record cannot drift apart.
 
 ```
-heddled dev                                          # console + live trace pane
 heddled chat support "where is invoice F-2231?"      # one scripted turn
 heddled tool test lookup_invoice --args '{"invoice_number":"F-2231"}'
+heddled trace s_a20941fe                             # print a session
 ```
-
-Everything the console does has a command, and both write the same files.
-
-Already have a checkout? `docker compose up` gives you the whole platform — console, API, record and worker. `agents/` and `tools/` are bind-mounted from it, so editing a file on the host takes effect immediately and `git diff` still tells the truth. To run the worker as its own process:
-
-```bash
-HEDDLED_WEB_ONLY=1 docker compose --profile split up
-```
-
-To work on Heddled itself rather than run it:
-
-```bash
-pip install -e .          # gives you the `heddled` command
-heddled init              # scaffold an example agent + tools
-heddled dev               # console on http://localhost:5005
-./heddled-cli dev         # or straight from a checkout, no install step
-```
-
-## How it is put together
-
-Low-code builders are approachable until you need real tools, real visibility, or a human in the loop — and your work ends up inside their database. Code frameworks give you files but hand you a library, not a product: you build the console, the traces, the approval flow and the operator experience yourself, every time.
-
-Heddled has **one spine**: a structured event stream every turn flows through. Everything else is either an **adapter** (moves messages in and out — tools and channels alike) or a **consumer** (observes the stream — trace viewer, console, eval runner). Because resumption reads the same log the audit reads, "what happened" and "what happens next" cannot drift apart.
 
 ## An agent is one file
 
@@ -139,33 +114,36 @@ def handle(args, ctx):
     return {"status": "unpaid", "amount_eur": 249.0}
 ```
 
-## Authoring — a UI that does not own your files
+## Authoring
 
-This is the part most platforms get wrong in one direction or the other, so it is worth being precise about what is claimed.
-
-Both surfaces call the same scaffolds, so they cannot drift:
+CLI and console call the same scaffolds, so they cannot drift:
 
 ```bash
 heddled new agent support --model anthropic/claude-sonnet-4-6
 heddled new tool lookup_invoice --input invoice_number:string --output "status:string,amount_eur:number"
 heddled new policy support --tool refund --requires-approval
-heddled new agent triage --from support        # most second agents are a variation on the first
+heddled new agent triage --from support        # clone an existing one
 ```
 
-…and the console's **New agent** / **New tool** buttons do the same thing. Every agent and tool page has a **Form** tab and a **Raw file** tab — two views of one document. The form knows the schema, so mistakes like mounting a tool that doesn't exist are unreachable rather than diagnosed; the raw tab is always one click away, so the form is never a ceiling.
+Every agent and tool page has a **Form** tab and a **Raw file** tab — two views of one document. The form knows the schema, so mounting a tool that doesn't exist is unreachable rather than diagnosed.
 
 Saving writes the file, and only the file:
 
 - Comments, key order and formatting survive — a one-field edit produces a one-line diff.
 - Validation runs *before* the file is touched; a rejected save returns your text with the reason, never a half-written file.
-- Anything the form can't represent faithfully (anchors, merge keys) is detected, and the form goes read-only rather than silently dropping it.
-- Deleting warns about what depends on it first — the Tools screen shows every agent a change would reach, because the registry is global.
+- Constructs the form can't represent faithfully (anchors, merge keys, multi-document streams) are detected and the form goes read-only rather than dropping them.
+- Deleting reports what depends on it first; the registry is global, so that list is complete.
 
-The mechanism is a ruamel round-trip plus one extra step: any line whose content is unchanged once whitespace is ignored keeps exactly how it was written, so the serialiser's own cosmetic preferences never show up as diff noise on lines you did not touch. Raw-tab saves write your text verbatim.
+Ticking one checkbox in the console, then `git diff`:
 
-Because the registry re-reads from disk, a change is live on the next turn. No restart, no deploy step.
+<picture>
+  <source media="(prefers-color-scheme: dark)" srcset="docs/diff-dark.webp">
+  <img src="docs/diff-light.webp" alt="git diff on an agent file showing two added lines requiring approval for the create_ticket tool. Nothing else in the file changed — comments, key order and formatting are as they were written.">
+</picture>
 
-Turn on **commit on save** in Settings and each edit becomes a commit, so `git log` is the change log. It ships off — Heddled writes files; whether they become commits is your call.
+Mechanism: a ruamel round-trip, plus a pass that keeps any line whose content is unchanged once whitespace is ignored — so the serialiser's cosmetic preferences never land in the diff. Raw-tab saves write your text verbatim.
+
+The registry re-reads from disk, so a change is live on the next turn. No restart, no deploy step. `commit_on_save` in Settings makes each edit a commit; it ships off.
 
 ## Three levels, no rewrites
 
