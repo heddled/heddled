@@ -3,34 +3,61 @@
   Heddled
 </h1>
 
-**A self-hosted AI agent platform whose agents you review in a pull request.**
+**Run AI assistants on your own machine, and see everything they do.**
 
-Every agent, tool and policy is a file in your repository. The console is a view over those same files and writes them back comment-preserving — so a change to what your AI is allowed to do arrives as a diff a person would have written, and goes through the review you already have.
+Give one a job — look up an invoice, deal with what lands in a shared mailbox, send the summary every morning at eight — and it gets on with it. Anything you would rather sign off yourself, it stops and asks. Every step it took is written down, and still there months later.
+
+You set it up in a browser, mostly without writing code. It runs in one container on a machine you control, works with any major AI provider or a model on your own hardware, and there is no account to sign up for.
 
 [![CI](https://github.com/heddled/heddled/actions/workflows/ci.yml/badge.svg)](https://github.com/heddled/heddled/actions/workflows/ci.yml)
 [![Python 3.10+](https://img.shields.io/badge/python-3.10%2B-blue)](https://www.python.org/downloads/)
 [![License: Apache-2.0](https://img.shields.io/badge/license-Apache--2.0-green)](LICENSE)
 
-[**heddled.com**](https://heddled.com) · [**Documentation**](https://heddled.com/docs.html)
+[**heddled.com**](https://heddled.com) · [**Documentation**](https://heddled.com/docs.html) · [**Install**](#install)
 
-Somebody ticked a box in the browser to gate an action behind approval. This is the whole diff:
+<picture>
+  <source media="(prefers-color-scheme: dark)" srcset="docs/console-dark.webp">
+  <img src="docs/console-light.webp" alt="A conversation written out in plain words: someone asks whether an invoice was paid, the assistant uses a lookup tool, gets back the status and amount, and replies with the details.">
+</picture>
+
+## Install
+
+```bash
+curl -fsSL https://heddled.com/install.sh | sh      # macOS, Linux
+irm https://heddled.com/install.ps1 | iex          # Windows, in PowerShell
+```
+
+Checks for Docker, offers to install it if it is missing, and starts Heddled on http://localhost:5005. Both scripts are plain files — read them first if you would rather; they ask before installing anything and will not write over an existing checkout.
+
+There is a built-in stand-in model, so you can follow the whole [walkthrough](https://heddled.com/docs.html) — build an assistant, watch it work, approve something — without an API key.
+
+## What people build with it
+
+- **A shared mailbox that answers itself.** Invoices, order queries, the same five questions — handled, with a ticket raised for anything it cannot finish.
+- **The eight o'clock job.** Check what is overdue, pull the numbers, post the summary where people already look.
+- **A front door for another system.** Something posts a webhook; the assistant checks your database, decides, and calls back — under rules you set.
+- **A colleague who knows your systems.** Ask a question in plain words, get an answer from your actual records rather than a guess.
+
+## Why this one
+
+**You can see what it did.** Every run is written down step by step: what it was asked, what it looked up, what came back, what it decided. Not a log you have to grep — a page you can read, months later.
+
+**It stops before doing anything you would rather approve.** Mark an action and the run pauses until a person decides. That pause is enforced by the platform, not requested of the model, so it cannot be talked out of it. Approve it and the run carries on from exactly where it stopped — days later, across a restart.
+
+**It stays yours.** Every assistant, tool and rule is a plain file in a folder you own. Copy it, back it up, put it in git. There is no database to export and no format that only Heddled can read.
+
+That last one has a consequence worth seeing. Here is somebody ticking a box in the browser to require approval on an action — and the entire diff it produced:
 
 <picture>
   <source media="(prefers-color-scheme: dark)" srcset="docs/diff-dark.webp">
-  <img src="docs/diff-light.webp" alt="git diff on an agent file showing two added lines that gate the create_ticket action behind approval. Nothing else in the file changed — comments, key order and formatting are exactly as they were written.">
+  <img src="docs/diff-light.webp" alt="git diff on an assistant's file showing two added lines that require approval for the create_ticket action. Nothing else in the file changed — comments, key order and formatting are exactly as they were written.">
 </picture>
 
-No database to export, no proprietary format, nothing to get locked into. Branch it, review it, revert it, `git blame` it.
+Comments, ordering and formatting survive untouched, so changes to what your AI is allowed to do can go through review like any other change. Turn on commit-on-save and `git log` becomes the history of who changed what.
 
----
+**Built for a small team with real systems to connect to.** One container, SQLite, no SPA, no build step, no message broker. Not a multi-tenant SaaS, and not trying to be.
 
-## Why
-
-Low-code builders are approachable until you need real tools, real visibility, or a human in the loop — and your work ends up inside their database, exportable only as a JSON blob nobody would hand-author. Code frameworks give you files but hand you a library, not a product: you build the console, the traces, the approval flow and the operator experience yourself, every time.
-
-Heddled takes both halves seriously. **Files are the source of truth** — and the UI is a real authoring surface over them, not a separate system that owns your configuration.
-
-Underneath, there is **one spine**: a structured event stream every turn flows through. Everything else is either an **adapter** (moves messages in and out — tools and channels alike) or a **consumer** (observes the stream — trace viewer, console, eval runner). Because resumption reads the same log the audit reads, "what happened" and "what happens next" cannot drift apart.
+## From the terminal, if you prefer
 
 ```
 heddled dev                                          # console + live trace pane
@@ -38,44 +65,28 @@ heddled chat support "where is invoice F-2231?"      # one scripted turn
 heddled tool test lookup_invoice --args '{"invoice_number":"F-2231"}'
 ```
 
-Built for a small team with real systems to connect to: one container, SQLite, no SPA, no build step, no message broker. Not a multi-tenant SaaS, and not trying to be.
+Everything the console does has a command, and both write the same files.
 
-## Install
-
-One command. It checks for Docker, offers to install it if it is missing, fetches Heddled and starts it on http://localhost:5005:
+Already have a checkout? `docker compose up` gives you the whole platform — console, API, record and worker. `agents/` and `tools/` are bind-mounted from it, so editing a file on the host takes effect immediately and `git diff` still tells the truth. To run the worker as its own process:
 
 ```bash
-curl -fsSL https://heddled.com/install.sh | sh      # macOS, Linux
-irm https://heddled.com/install.ps1 | iex          # Windows, in PowerShell
+HEDDLED_WEB_ONLY=1 docker compose --profile split up
 ```
-
-Both are plain files — read them first if you would rather. They ask before installing anything and refuse to write over an existing checkout. `HEDDLED_DIR`, `HEDDLED_PORT` and `HEDDLED_REPO` change where, which port, and which fork.
 
 To work on Heddled itself rather than run it:
 
 ```bash
 pip install -e .          # gives you the `heddled` command
-heddled init                 # scaffold an example agent + tools
-heddled dev                  # console on http://localhost:5005
+heddled init              # scaffold an example agent + tools
+heddled dev               # console on http://localhost:5005
+./heddled-cli dev         # or straight from a checkout, no install step
 ```
 
-Or run it straight from a checkout with no install step at all:
+## How it is put together
 
-```bash
-./heddled-cli dev
-```
+Low-code builders are approachable until you need real tools, real visibility, or a human in the loop — and your work ends up inside their database. Code frameworks give you files but hand you a library, not a product: you build the console, the traces, the approval flow and the operator experience yourself, every time.
 
-### Self-host
-
-```bash
-docker compose up         # console, API, trace store, worker — the whole platform
-```
-
-`agents/` and `tools/` are bind-mounted from the checkout, so editing a file on the host takes effect immediately and `git diff` still tells the truth. To run the worker as its own process:
-
-```bash
-HEDDLED_WEB_ONLY=1 docker compose --profile split up
-```
+Heddled has **one spine**: a structured event stream every turn flows through. Everything else is either an **adapter** (moves messages in and out — tools and channels alike) or a **consumer** (observes the stream — trace viewer, console, eval runner). Because resumption reads the same log the audit reads, "what happened" and "what happens next" cannot drift apart.
 
 ## An agent is one file
 
@@ -182,11 +193,6 @@ operator.injected · message.sent · turn.completed · error.raised
 ```
 
 Each carries `session_id`, `turn_id`, `agent_version` and a monotonic sequence number. Because the exact model context is captured in `context.built`, you can replay any turn against a modified agent version and diff the behaviour. The audit log isn't a feature — it's a query.
-
-<picture>
-  <source media="(prefers-color-scheme: dark)" srcset="docs/console-dark.webp">
-  <img src="docs/console-light.webp" alt="A conversation written out in plain words: someone asks whether an invoice was paid, the agent uses a lookup tool, gets back the status and amount, and replies with the details.">
-</picture>
 
 One trace-view component is reused in four places: the dev harness, live sessions (over SSE), historical replay, and eval diffs. `j`/`k` step events, `Enter` expands, and `/sessions/<id>#e-1234` addresses a single event.
 
