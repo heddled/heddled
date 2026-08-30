@@ -22,6 +22,21 @@ def _open_chat(project, registry, name="support"):
     return path
 
 
+def _seed(agent="support", who="tester", text="where is invoice F-2231?"):
+    """One real turn on the chat channel, attributed to `who`.
+
+    The chat endpoint queues work for the worker rather than blocking, which is
+    the whole point of the streaming surface — but it means a test that posts
+    and then reads the page sees an empty conversation. This drives the same
+    entry point synchronously so there is something to assert about.
+    """
+    from heddled import runtime
+
+    return runtime.submit_message(
+        agent, text, channel="chat", origin={"kind": "chat", "who": who},
+        sender=who, sync=True, timeout_s=25)
+
+
 class TestOptIn:
     def test_an_agent_is_not_reachable_until_its_file_says_so(self, client, registry):
         assert client.get("/chat/support").status_code == 404
@@ -47,16 +62,22 @@ class TestTheConsoleIsNotHere:
                      'href="/agents"', 'href="/users"'):
             assert leak not in body, f"chat page links into the console: {leak}"
 
-    def test_it_does_not_show_what_the_agent_did(self, client, project, registry, store):
+    def test_it_does_not_show_what_the_agent_did(self, client, project,
+                                                registry, worker):
         """The trace belongs to whoever operates the agent, not to the person
-        chatting."""
+        chatting. Driven through a real turn — asserting an absence on a page
+        that never had a conversation on it proves nothing."""
         _open_chat(project, registry)
-        r = client.post("/chat/support/messages",
-                        json={"text": "where is invoice F-2231?"})
-        sid = r.get_json()["session_id"]
-        _drain(store, sid)
-        body = client.get(f"/chat/support?session={sid}").get_data(as_text=True)
-        assert "lookup_invoice" not in body
+        result = _seed()
+        body = client.get(
+            f"/chat/support?session={result['session_id']}").get_data(as_text=True)
+        assert "where is invoice F-2231?" in body, "the conversation should be shown"
+        # Only the two message events reach this page. Everything below is
+        # trace-only and could not appear in something the agent said — unlike,
+        # say, a tool's name, which a reply may well mention on its own.
+        for trace_only in ("context.built", "model.invoked", "model.responded",
+                           "duration_ms", "input_tokens", "agent_version"):
+            assert trace_only not in body, f"the trace reached the page: {trace_only}"
 
 
 class TestOneConversationIsYours:
@@ -197,3 +218,47 @@ class TestTurningItOnAndOff:
                           "expose_chat": "on"})
         expose = registry.get_agent("support").expose
         assert expose.get("mcp") is True and expose.get("chat") is True
+
+
+class TestThePageItself:
+    def test_replies_are_sent_as_plain_text_for_the_page_to_render(
+            self, client, project, registry, worker):
+        """Markdown becomes HTML in one place — the renderer — over a string the
+        server never marked safe. If the server ever rendered it too, that would
+        be a second escaping path, and one of them would be wrong."""
+        _open_chat(project, registry)
+        result = _seed()
+        body = client.get(
+            f"/chat/support?session={result['session_id']}").get_data(as_text=True)
+        assert "data-md" in body
+
+    def test_the_empty_page_suggests_something_to_ask(self, client, project, registry):
+        _open_chat(project, registry)
+        body = client.get("/chat/support").get_data(as_text=True)
+        assert 'class="btn opener"' in body
+
+    def test_a_thread_with_no_title_is_named_by_the_question(
+            self, client, project, registry, store, worker):
+        """The engine titles a session when a turn ends, so anything still
+        running has none. "Untitled" identifies nothing."""
+        _open_chat(project, registry)
+        _seed()
+        body = client.get("/chat/support").get_data(as_text=True)
+        assert "Untitled" not in body
+        assert "where is invoice F-2231?" in body
+
+    def test_other_chat_agents_are_offered_but_not_the_current_one(
+            self, client, project, registry):
+        from heddled import yamlio
+
+        for name in ("support", "office_helper"):
+            path = project / "agents" / f"{name}.yaml"
+            if not path.exists():
+                continue
+            data = yamlio.load(path.read_text())
+            data.setdefault("expose", {})["chat"] = True
+            path.write_text(yamlio.dump(data))
+
+        body = client.get("/chat/support").get_data(as_text=True)
+        # The one you are on is not offered as somewhere else to go.
+        assert body.count('href="/chat/support"') <= 1

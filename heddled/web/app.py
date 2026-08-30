@@ -12,7 +12,7 @@ import os
 import queue
 import re
 import time
-from datetime import timedelta
+from datetime import datetime, timedelta
 from pathlib import Path
 from typing import Optional
 
@@ -286,6 +286,15 @@ def create_app(start_worker: bool = True, dev: bool = False) -> Flask:
         if not value:
             return "—"
         return time.strftime("%H:%M:%S", time.localtime(float(value)))
+
+    @app.template_filter("clock")
+    def _clock(value):
+        """Wall-clock time for a message that has already happened. `ago` is
+        right for a list of threads; inside a conversation you want to know it
+        was 14:32, not that it was "3d" ago."""
+        if not value:
+            return ""
+        return datetime.fromtimestamp(float(value)).strftime("%H:%M")
 
     @app.template_filter("ago")
     def _ago(value):
@@ -1731,7 +1740,7 @@ def register_api(app: Flask) -> None:
         agent = _chat_agent_or_404(name)
         who = (getattr(g, "user", None) or {}).get("username")
         sid = request.args.get("session")
-        history, session = [], None
+        history = []
         if sid:
             session = get_store().get_session(sid)
             # Somebody else's conversation is not yours to open, whatever your
@@ -1739,10 +1748,33 @@ def register_api(app: Flask) -> None:
             if not session or not _mine(session, who, agent.name):
                 abort(404)
             history = _chat_history(sid)
-        mine = get_store().list_sessions(agent=agent.name, channel="chat",
-                                         who=who, limit=20)
-        return render_template("chat.html", agent=agent, session_id=sid,
-                               history=history, threads=mine, who=who)
+
+        # The engine writes a title when a turn ends, so anything still running
+        # — or that failed before it finished — has none. "Untitled" tells the
+        # reader nothing; the question they asked identifies it perfectly well.
+        # Resolved for the few that need it rather than for all thirty.
+        threads, unresolved = [], 0
+        for s in get_store().list_sessions(agent=agent.name, channel="chat",
+                                           who=who, limit=30):
+            title = s["title"]
+            if not title and unresolved < 5:
+                unresolved += 1
+                first = next((m["text"] for m in _chat_history(s["id"])
+                              if m["role"] == "you"), "")
+                title = (first[:60] + "…") if len(first) > 60 else first
+            threads.append({"id": s["id"], "title": title or "New conversation",
+                            "updated_at": s["updated_at"]})
+        # Somewhere to go if this is not the assistant they wanted. Only ones
+        # that have opted in, and never the one already open.
+        others = [a for a in _chat_agents() if a.name != agent.name]
+        return render_template(
+            "chat.html", agent=agent, session_id=sid, history=history,
+            threads=threads, others=others, who=who,
+            # Suggested first messages, from the agent's own tools — the same
+            # helper the Test tab uses, because an empty box tells somebody who
+            # did not build this agent nothing about what it can do.
+            openers=story.openers(agent, get_registry().agent_tools(agent)),
+        )
 
     def _chat_history(sid: str) -> list[dict]:
         """The conversation as the person had it — the two message events only.
@@ -1753,9 +1785,11 @@ def register_api(app: Flask) -> None:
         out = []
         for ev in get_store().events_for_session(sid):
             if ev.type == "message.received":
-                out.append({"role": "you", "text": ev.payload.get("text") or ""})
+                out.append({"role": "you", "text": ev.payload.get("text") or "",
+                            "at": ev.ts})
             elif ev.type == "message.sent":
-                out.append({"role": "agent", "text": ev.payload.get("text") or ""})
+                out.append({"role": "agent", "text": ev.payload.get("text") or "",
+                            "at": ev.ts})
         return out
 
     def _mine(session, who: str, agent_name: str = None) -> bool:

@@ -7,6 +7,7 @@ design work is verified rather than assumed.
     HEDDLED_PORT=5001 docker compose up -d          # or: heddled serve
 
     python tools_dev/ui_audit.py     # contrast, hit targets, overflow
+    python tools_dev/md_check.py     # the chat renderer, and what escapes it
     python tools_dev/ui_shots.py out # every screen, light and dark
 
 `ui_audit.py` measures what the eye estimates badly:
