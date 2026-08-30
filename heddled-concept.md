@@ -21,7 +21,7 @@ The second half of the thesis is **progressive disclosure without rewrites**. Ea
 3. **Files first, UI second — but the UI is a real authoring surface.** Every agent, tool, and policy is a versionable file on disk. The UI reads and writes those same files — it never owns state the files don't have, and `git diff` always tells the truth about what changed. "Files first" is a statement about the *source of truth*, not a reason to make the console read-only: creating an agent, adding a tool, and changing a policy must all be possible without leaving the browser, because the alternative is an editor, a terminal, and a restart for every one-line change.
 4. **Escape hatches, not cliffs.** Start in YAML. Drop to a Python handler when a tool needs logic. Drop to the Python API when the agent loop itself needs customizing. Each step is additive.
 5. **Self-hosted first.** A single `docker compose up` gives you the full platform — core, console, trace store. Cloud is a deployment target, not a requirement.
-6. **Humans are in the loop, not in the tool.** Approval, escalation, and takeover are core primitives — but Heddled routes them out through adapters to wherever the human already works. Heddled's own UI is for agent designers and admins; it is never a required surface for end users or approvers.
+6. **Humans are in the loop, not in the tool.** Approval, escalation, and takeover are core primitives — and Heddled routes them out through adapters to wherever the human already works. The console is for agent designers and admins: it is never the *required* surface for approvers, and never the surface for end users at scale. The one exception is deliberate and narrow — see §9, *Talking to an agent without operating one*. An agent nobody but its author can use is not finished, and "integrate Teams first" is too high a wall to put in front of showing a colleague what you built.
 
 ## 3. Who it's for
 
@@ -160,10 +160,12 @@ This keeps the whole surface honest: **push triggers are channel adapters, pull 
 
 ## 8. Operating: headless by design
 
-Heddled is infrastructure, not a frontend. End users never see Heddled — they see Teams, a webhook consumer, whatever channel the agent lives on. Approvers never see Heddled either: human-in-the-loop is routed *out* through adapters. A paused turn is always followed up by an adapter.
+Heddled is infrastructure, not a frontend. At scale, end users meet an agent where they already are — Teams, a webhook consumer, whatever channel it lives on — and approvers are followed up by an adapter rather than asked to log in. A paused turn is always followed up by an adapter.
+
+That holds for production traffic. It does not hold for the colleague who wants to try the thing you just built, or for a small team that has no channel infrastructure to integrate with yet. For those, §9 describes a minimal chat surface: opt-in per agent, accounts issued by an admin, and no console access whatsoever. It is a way in, not a frontend to brand and ship.
 
 - **Approval routing.** A tool flagged `requires_approval` pauses the turn and emits `approval.requested`. An *approval adapter* delivers it wherever the approver already works — a Teams/Slack card, an email with signed approve/deny links, a webhook into an existing ticketing flow — carrying the proposed action, exact arguments, and context. The answer returns inbound as `approval.resolved` and the turn resumes. The generic webhook approval adapter is the reference implementation; everything else is a nicer skin over the same two events.
-- **The console is for builders and admins only.** Session list, trace drill-in, replay, deployments, policy management — mission control, not a contact-center UI. It carries an approval view purely as a fallback consumer of the same events. If anyone who isn't designing or administering agents needs to open Heddled daily, that's a design smell.
+- **The console is for builders and admins only.** Session list, trace drill-in, replay, deployments, policy management — mission control, not a contact-center UI. It carries an approval view purely as a fallback consumer of the same events. Nobody who is not designing or administering agents should ever reach *the console* — which is a statement about the console, not about the platform having no door for anyone else.
 - **Takeover is a primitive, not a product.** `operator.injected` stays in the event contract (it's just another inbound adapter). The console surfaces it for designers diagnosing a stuck session; teams that want human handoff for end users build that surface in *their* frontend on top of the primitive.
 - **Replay** — step through any completed turn event by event. Because the exact model context is captured in `context.built`, you can re-run a turn against a modified agent version and diff the behavior.
 
@@ -206,6 +208,62 @@ Saving always shows the diff that is about to be written, and validation runs be
 **Git is optional, and off by default.** A `commit_on_save` setting makes each console write a commit with a generated message (`support: require approval for refund`), which turns the file history into the change log and makes "who changed this and when" a `git log` rather than a feature. It ships off, because taking over someone's working tree without asking is not convenience — it is a surprise. Heddled writes files; whether those files become commits is the operator's call.
 
 **Trace view anatomy** (specified once, since everything reuses it): left, the event timeline — color-coded by event type, auto-appending over SSE when live, scrubbable in replay; right, the detail pane for the selected event — pretty-printed payload, the full `context.built` when applicable, tool arguments and result, duration, tokens; top, the turn header — session, agent version, and trigger origin (which cron tick, which email, which MCP caller started this). Keyboard: `j`/`k` to step events, `Enter` to expand. In diff mode, two timelines render side by side, aligned by event sequence, highlighting from the first divergent tool call onward.
+
+### Talking to an agent without operating one
+
+The console is mission control. But an agent only its author can talk to is not
+finished, and "wire up Teams first" is too high a wall to put in front of showing
+a colleague what you built. So there is a second surface, and it is deliberately
+small.
+
+**Opt in per agent, in the file.** `expose: { chat: true }` alongside the existing
+`expose: { mcp: true }` — so turning it on is a diff somebody can review, and no
+upgrade ever opens a door on an install that did not ask for one. Off by default.
+
+**No new kind of account.** Chat is open to anyone who can already sign in;
+`viewer` is the lowest role and is enough. A fourth "guest" role was considered
+and rejected: a second identity system is a second set of guards to get right,
+and every parallel privilege model eventually grows a hole where the two meet.
+One account type, one guard, one place to revoke.
+
+The consequence is worth stating plainly rather than discovering: **an account is
+an account.** A viewer added so they can chat can also read the console —
+every agent, every conversation, every trace. That is the existing trust model,
+unchanged, and it is the right trade for a small team where accounts go to people
+you already trust. If you need somebody to reach one agent and nothing else, the
+answer is the one it has always been: route them through an adapter — Slack,
+Teams, a webhook — and do not give them an account at all.
+
+**Chat is its own channel.** The Test tab stays `webchat`; the chat surface is a
+separate channel, `chat`. This matters because `allow_channels` and
+`deny_channels` are security controls, and an operator trying something in the
+console is not the same context as somebody typing into a chat box. Two channel
+names lets a policy say so: `refund` usable from the console, never over `chat`.
+One name would make that inexpressible.
+
+**A pause is shown, not hidden.** When a turn stops for approval the person is
+told it is waiting for someone, and told again when it resolves. Silence would be
+the easy implementation and the wrong one — the pause is the product working, and
+it is the one thing this surface can show that a chat box bolted onto a model
+cannot.
+
+**Tokens stream.** Waiting in silence for eight seconds and then being handed a
+finished paragraph reads as broken; the same words arriving as they are generated
+read as thinking. Providers grow an optional `stream()` that yields text deltas,
+and the default implementation falls back to `complete()` so a provider without
+streaming still works — it simply arrives all at once.
+
+Deltas are **not events**. The spine stays thirteen event types, and
+`model.responded` is still emitted once with the finished text — putting every
+token on the audit log would multiply the event store by three orders of
+magnitude to record something no one will ever query. Instead deltas ride the
+existing subscriber fan-out as ephemeral broadcasts: same SSE connection, never
+persisted, and a reader that misses them still reconstructs the whole
+conversation from the events alone.
+
+What this is not: a frontend to brand, theme, embed, or ship to customers. No
+logo upload, no CSS hooks, no widget snippet. Teams who want a customer-facing
+chat build it on the API, and that answer does not change.
 
 ## 10. Trust layer
 

@@ -48,6 +48,7 @@ HEDDLED_WEB_ONLY=1 docker compose --profile split up   # worker as its own proce
 | **Observability** | 13-event contract per turn, each carrying `session_id`, `turn_id`, `agent_version`, sequence number. Live SSE trace, historical replay, OTLP export. |
 | **Evals** | Promote any recorded session to a golden trace; replay it against a candidate version with tools mocked. Assertions: exact, contains, regex, similar, LLM-judge. |
 | **Versions** | Version = sha256 of definition + instructions. Bind one to `dev`/`staging`/`prod`; deploys gate on a green eval run. |
+| **Chat surface** | `expose: { chat: true }` gives an agent a page at `/chat/<name>` for people who have an account but do not operate the place — their own conversations, none of the console. Replies stream token by token. |
 | **Multi-agent** | Mount an agent as a tool (`agent:billing`) with depth and cycle protection; expose an agent as an MCP server. |
 | **Models** | Anthropic, plus any OpenAI-compatible service with its own key and base URL — OpenAI, DeepSeek, Groq, Mistral, Together, OpenRouter, Ollama, vLLM. |
 | **Storage** | SQLite in WAL mode: events, sessions, state, job queue, cursors, approvals, deployments, users. Contexts pruned after 90 days by default. |

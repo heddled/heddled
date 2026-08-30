@@ -29,7 +29,7 @@ class AnthropicProvider(Provider):
             )
         return key
 
-    def complete(self, system, messages, tools=None, max_tokens=4096, temperature=None):
+    def _body(self, system, messages, tools, max_tokens, temperature) -> dict:
         body = {
             "model": self.model,
             "max_tokens": max_tokens,
@@ -48,18 +48,26 @@ class AnthropicProvider(Provider):
             ]
         if temperature is not None:
             body["temperature"] = temperature
+        return body
 
+    def _endpoint(self) -> str:
         base = self.settings.get("anthropic_base_url") or os.environ.get(
             "ANTHROPIC_BASE_URL", "https://api.anthropic.com"
         )
+        return base.rstrip("/") + "/v1/messages"
+
+    def _headers(self) -> dict:
+        return {
+            "x-api-key": self._key(),
+            "anthropic-version": API_VERSION,
+            "content-type": "application/json",
+        }
+
+    def complete(self, system, messages, tools=None, max_tokens=4096, temperature=None):
         resp = requests.post(
-            base.rstrip("/") + "/v1/messages",
-            headers={
-                "x-api-key": self._key(),
-                "anthropic-version": API_VERSION,
-                "content-type": "application/json",
-            },
-            json=body,
+            self._endpoint(),
+            headers=self._headers(),
+            json=self._body(system, messages, tools, max_tokens, temperature),
             timeout=float(self.settings.get("timeout_s", 120)),
         )
         if resp.status_code >= 400:
@@ -85,6 +93,81 @@ class AnthropicProvider(Provider):
             stop_reason=data.get("stop_reason", "end_turn"),
             raw=data,
             model=data.get("model", self.model),
+        )
+
+    supports_streaming = True
+
+    def stream(self, system, messages, on_delta, tools=None, max_tokens=4096,
+               temperature=None):
+        """Same request with `stream: true`, reassembled into one ModelResponse.
+
+        Tool calls arrive as a series of JSON fragments that only parse once the
+        block is complete, so they are buffered and decoded at `content_block_stop`
+        rather than streamed — a half-built argument object is not something any
+        caller could use.
+        """
+        body = dict(self._body(system, messages, tools, max_tokens, temperature),
+                    stream=True)
+        resp = requests.post(
+            self._endpoint(), headers=self._headers(), json=body, stream=True,
+            timeout=float(self.settings.get("timeout_s", 120)),
+        )
+        if resp.status_code >= 400:
+            raise ProviderError(f"anthropic {resp.status_code}: {resp.text[:600]}")
+
+        text_parts: list[str] = []
+        calls: list[ToolCall] = []
+        usage = {"input_tokens": 0, "output_tokens": 0}
+        stop_reason = "end_turn"
+        model = self.model
+        block: dict = {}
+        partial = ""
+
+        for line in resp.iter_lines(decode_unicode=True):
+            if not line or not line.startswith("data:"):
+                continue
+            try:
+                ev = json.loads(line[5:].strip())
+            except ValueError:
+                continue
+            kind = ev.get("type")
+
+            if kind == "message_start":
+                msg = ev.get("message") or {}
+                model = msg.get("model", model)
+                usage["input_tokens"] = (msg.get("usage") or {}).get("input_tokens", 0)
+            elif kind == "content_block_start":
+                block = ev.get("content_block") or {}
+                partial = ""
+            elif kind == "content_block_delta":
+                delta = ev.get("delta") or {}
+                if delta.get("type") == "text_delta":
+                    piece = delta.get("text") or ""
+                    if piece:
+                        text_parts.append(piece)
+                        on_delta(piece)
+                elif delta.get("type") == "input_json_delta":
+                    partial += delta.get("partial_json") or ""
+            elif kind == "content_block_stop":
+                if block.get("type") == "tool_use":
+                    try:
+                        args = json.loads(partial) if partial.strip() else {}
+                    except ValueError:
+                        args = {}
+                    calls.append(ToolCall(id=block.get("id", ""),
+                                          name=block.get("name", ""), arguments=args))
+                block, partial = {}, ""
+            elif kind == "message_delta":
+                stop_reason = (ev.get("delta") or {}).get("stop_reason") or stop_reason
+                usage["output_tokens"] = (ev.get("usage") or {}).get(
+                    "output_tokens", usage["output_tokens"])
+            elif kind == "error":
+                raise ProviderError(
+                    f"anthropic stream: {(ev.get('error') or {}).get('message', 'failed')}")
+
+        return ModelResponse(
+            text="".join(text_parts), tool_calls=calls, usage=usage,
+            stop_reason=stop_reason, model=model,
         )
 
 

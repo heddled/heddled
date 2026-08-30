@@ -1,0 +1,47 @@
+{#- Standalone for the same reason as chat.html: none of the console. -#}
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Assistants</title>
+<link rel="icon" href="/static/brand/icon.svg" type="image/svg+xml">
+<link rel="stylesheet" href="/static/console.css">
+</head>
+<body class="chat-page">
+
+<header class="chat-head">
+  <span class="chat-who">
+    <svg class="brand-mark" viewBox="0 0 64 64" fill="none" stroke-linecap="square"
+         aria-hidden="true" focusable="false">
+      <g stroke="currentColor" stroke-width="7.5">
+        <path d="M18 6 V26 M18 38 V58"/><path d="M46 6 V26 M46 38 V58"/>
+        <path d="M6 18 H26 M38 18 H58"/><path d="M6 50 H26 M38 50 H58"/>
+      </g>
+      <path d="M6 34 H34" stroke="var(--brand-thread, #B4442E)" stroke-width="7.5"/>
+      <circle cx="48" cy="34" r="6.5" fill="var(--brand-thread, #B4442E)"/>
+    </svg>
+    <b>Assistants</b>
+  </span>
+</header>
+
+<main class="chat-main chat-pick">
+  {% if agents %}
+  <div class="cards">
+    {% for a in agents %}
+    <a class="pick-card" href="/chat/{{ a.name }}">
+      <h2>{{ a.name }}</h2>
+      <p>{{ a.description or "Ask it something." }}</p>
+    </a>
+    {% endfor %}
+  </div>
+  {% else %}
+  <div class="chat-empty">
+    <p>No assistant has been opened up for chat yet.</p>
+    <p class="muted small">Whoever looks after this Heddled can turn one on from
+      the assistant's page.</p>
+  </div>
+  {% endif %}
+</main>
+</body>
+</html>

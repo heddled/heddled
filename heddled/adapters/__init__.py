@@ -5,6 +5,7 @@ from __future__ import annotations
 from typing import Optional
 
 from .base import Adapter, DeliveryError
+from .chat import ChatAdapter
 from .mailbox import MailboxPoller
 from .slack import SlackAdapter, SlackApprovalAdapter
 from .webchat import WebchatAdapter
@@ -12,6 +13,7 @@ from .webhook import WebhookAdapter, WebhookApprovalAdapter
 
 CHANNELS = {
     "webchat": WebchatAdapter,
+    "chat": ChatAdapter,
     "webhook": WebhookAdapter,
     "slack": SlackAdapter,
     "mcp": WebchatAdapter,  # inbound-only; replies return through the MCP result

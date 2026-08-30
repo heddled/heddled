@@ -1068,3 +1068,79 @@ details.picker > summary:hover .picker-verb { text-decoration: underline; }
 .nav .brand .brand-mark { width: 18px; height: 18px; }
 .foot-brand { display: inline-flex; align-items: center; gap: 6px; }
 .foot-brand .brand-mark { width: 14px; height: 14px; }
+
+/* ============================================================ chat surface
+   The page somebody talks to an agent on without operating one. It borrows the
+   bubbles and the type scale from the console and none of its furniture — no
+   nav, no search, no counts. Kept here rather than in a second stylesheet so
+   the two cannot drift apart on a theme change. */
+
+.chat-page {
+  display: flex; flex-direction: column; min-height: 100vh; margin: 0;
+}
+.chat-head {
+  display: flex; align-items: center; gap: 14px;
+  padding: 0 18px; height: 52px; flex: 0 0 auto;
+  border-bottom: 1px solid var(--line); background: var(--panel);
+}
+.chat-who { display: flex; align-items: center; gap: 9px; min-width: 0; }
+.chat-who .brand-mark { width: 20px; height: 20px; flex: 0 0 auto; }
+.chat-who .muted {
+  overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
+}
+.chat-head .spacer { flex: 1 1 auto; }
+
+.chat-threads { position: relative; }
+.chat-threads > summary {
+  cursor: pointer; list-style: none; font-size: 13px; color: var(--muted);
+  padding: 6px 8px; min-height: 30px; display: flex; align-items: center;
+}
+.chat-threads > summary::-webkit-details-marker { display: none; }
+.chat-threads > summary:hover { color: var(--text); }
+.chat-threads ul {
+  position: absolute; right: 0; top: 100%; z-index: 20; margin: 0;
+  padding: 6px; list-style: none; min-width: 190px;
+  background: var(--panel); border: 1px solid var(--line); border-radius: 8px;
+  box-shadow: 0 6px 20px rgba(0,0,0,.16);
+}
+.chat-threads li a {
+  display: block; padding: 7px 9px; border-radius: 6px; font-size: 13px;
+}
+.chat-threads li a:hover { background: var(--panel-2); }
+
+.chat-main {
+  flex: 1 1 auto; display: flex; flex-direction: column; min-height: 0;
+  width: 100%; max-width: 760px; margin: 0 auto; padding: 0 18px;
+}
+.chat-log {
+  flex: 1 1 auto; overflow-y: auto; min-height: 0;
+  display: flex; flex-direction: column; gap: 10px; padding: 20px 0;
+}
+.chat-empty { margin: auto 0; text-align: center; }
+.chat-empty p { margin: 0 0 6px; }
+
+/* A caret while the words are still arriving, so a pause between tokens reads
+   as thinking rather than as finished. */
+.bubble.streaming::after {
+  content: "▍"; margin-left: 1px; opacity: .55;
+  animation: chat-caret 1.05s steps(1) infinite;
+}
+@keyframes chat-caret { 50% { opacity: 0; } }
+@media (prefers-reduced-motion: reduce) {
+  .bubble.streaming::after { animation: none; }
+}
+
+.chat-form {
+  flex: 0 0 auto; display: flex; gap: 9px; padding: 12px 0 20px;
+  border-top: 1px solid var(--line);
+}
+.chat-form input {
+  flex: 1 1 auto; min-width: 0;
+}
+
+.chat-pick { justify-content: center; padding-top: 34px; }
+
+@media (max-width: 640px) {
+  .chat-main { padding: 0 12px; }
+  .chat-who .muted { display: none; }
+}

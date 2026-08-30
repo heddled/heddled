@@ -271,7 +271,16 @@ class TurnEngine:
         t0 = time.time()
         try:
             provider = get_provider(self.agent.model, self.settings)
-            response = provider.complete(system=system, messages=messages, tools=tool_schemas)
+            # Deltas are broadcast, not emitted: live listeners see the reply
+            # form, and the spine still records one `model.responded` with the
+            # finished text. A turn replayed from events looks identical whether
+            # it was streamed or not.
+            def on_delta(piece: str) -> None:
+                self.store.broadcast(self.session_id, "model.delta",
+                                     {"text": piece, "turn_id": self.turn_id})
+
+            response = provider.stream(system=system, messages=messages,
+                                       on_delta=on_delta, tools=tool_schemas)
         except ProviderError as exc:
             self.state["error"] = str(exc)
             self.emit(ERROR_RAISED, {"kind": "provider_error", "message": str(exc)})

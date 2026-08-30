@@ -58,6 +58,27 @@ def _guess_args(tool_name: str, schema: dict, text: str) -> dict:
 class MockProvider(Provider):
     name = "mock"
 
+    supports_streaming = True
+
+    def stream(self, system, messages, on_delta, tools=None, max_tokens=4096,
+               temperature=None):
+        """Chops the canned reply into word-sized pieces.
+
+        The stand-in provider exists so the whole product can be tried with no
+        account anywhere, and that has to include the way replies arrive — if
+        streaming only worked once somebody added an API key, the first thing
+        they saw would be the one behaviour we do not ship. No artificial delay:
+        it is a test double, not a simulation.
+        """
+        response = self.complete(system, messages, tools=tools,
+                                 max_tokens=max_tokens, temperature=temperature)
+        text = response.text
+        if text:
+            pieces = re.findall(r"\S+\s*", text)
+            for piece in pieces:
+                on_delta(piece)
+        return response
+
     def complete(self, system, messages, tools=None, max_tokens=4096, temperature=None):
         tools = tools or []
         last_user = ""

@@ -248,9 +248,20 @@ def install(app) -> None:
                                    message="Only an administrator can see that."), 403
 
         # A read-only account must not be able to change anything, whichever
-        # screen or endpoint it reaches.
+        # screen or endpoint it reaches. Talking to an agent is the one POST
+        # that is *using* Heddled rather than changing it: a viewer who can open
+        # the chat page but cannot send a message has a text box that does
+        # nothing, which is why the chat surface exists at all.
+        #
+        # Deliberately one exact shape of path, not a prefix — this is a hole in
+        # the read-only guarantee and it should be exactly the size of the chat
+        # box. Note what a viewer can still cause through it: whatever actions
+        # that agent is allowed, bounded by its own policies and budgets. An
+        # agent that can send email can send email on a viewer's say-so.
         if request.method in ("POST", "PUT", "PATCH", "DELETE"):
-            if user["role"] not in users.CAN_WRITE:
+            using_not_changing = (path.startswith("/chat/")
+                                  and path.endswith("/messages"))
+            if user["role"] not in users.CAN_WRITE and not using_not_changing:
                 users.record(store, user["username"], "denied.write", path,
                              ip=request.remote_addr)
                 if path.startswith("/api/"):

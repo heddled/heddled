@@ -48,7 +48,7 @@ class OpenAICompatProvider(Provider):
             or "https://api.openai.com/v1"
         ).rstrip("/")
 
-    def complete(self, system, messages, tools=None, max_tokens=4096, temperature=None):
+    def _body(self, system, messages, tools, max_tokens, temperature) -> dict:
         body = {
             "model": self.model,
             "messages": _to_openai(system, messages),
@@ -69,14 +69,17 @@ class OpenAICompatProvider(Provider):
             ]
         if temperature is not None:
             body["temperature"] = temperature
+        return body
 
+    def _headers(self) -> dict:
+        return {"Authorization": f"Bearer {self._key()}",
+                "content-type": "application/json"}
+
+    def complete(self, system, messages, tools=None, max_tokens=4096, temperature=None):
         resp = requests.post(
             self._base() + "/chat/completions",
-            headers={
-                "Authorization": f"Bearer {self._key()}",
-                "content-type": "application/json",
-            },
-            json=body,
+            headers=self._headers(),
+            json=self._body(system, messages, tools, max_tokens, temperature),
             timeout=float(self.settings.get("timeout_s", 120)),
         )
         if resp.status_code >= 400:
@@ -108,6 +111,89 @@ class OpenAICompatProvider(Provider):
             stop_reason=choice.get("finish_reason", "stop"),
             raw=data,
             model=data.get("model", self.model),
+        )
+
+
+    supports_streaming = True
+
+    def stream(self, system, messages, on_delta, tools=None, max_tokens=4096,
+               temperature=None):
+        """Same request with `stream: true`.
+
+        Tool calls arrive as fragments indexed by position, so they are collected
+        into a dict keyed by that index and decoded at the end — the arguments
+        are a JSON string built one piece at a time and cannot be parsed until it
+        is whole. `stream_options` asks for a usage report, which most
+        OpenAI-compatible services honour and the rest simply ignore; when it is
+        missing the turn still completes, it just contributes nothing to the
+        token budget.
+        """
+        body = dict(self._body(system, messages, tools, max_tokens, temperature),
+                    stream=True)
+        body["stream_options"] = {"include_usage": True}
+        resp = requests.post(
+            self._base() + "/chat/completions", headers=self._headers(),
+            json=body, stream=True,
+            timeout=float(self.settings.get("timeout_s", 120)),
+        )
+        if resp.status_code >= 400:
+            raise ProviderError(
+                f"{self.spec.get('label', self.provider)} {resp.status_code}: "
+                f"{resp.text[:600]}")
+
+        text_parts: list[str] = []
+        pending: dict = {}
+        usage = {"input_tokens": 0, "output_tokens": 0}
+        stop_reason = "end_turn"
+        model = self.model
+
+        for line in resp.iter_lines(decode_unicode=True):
+            if not line or not line.startswith("data:"):
+                continue
+            chunk = line[5:].strip()
+            if chunk == "[DONE]":
+                break
+            try:
+                ev = json.loads(chunk)
+            except ValueError:
+                continue
+
+            model = ev.get("model", model)
+            if ev.get("usage"):
+                usage["input_tokens"] = ev["usage"].get("prompt_tokens", 0)
+                usage["output_tokens"] = ev["usage"].get("completion_tokens", 0)
+
+            for choice in ev.get("choices") or []:
+                delta = choice.get("delta") or {}
+                piece = delta.get("content")
+                if piece:
+                    text_parts.append(piece)
+                    on_delta(piece)
+                for call in delta.get("tool_calls") or []:
+                    slot = pending.setdefault(
+                        call.get("index", 0), {"id": "", "name": "", "args": ""})
+                    if call.get("id"):
+                        slot["id"] = call["id"]
+                    fn = call.get("function") or {}
+                    if fn.get("name"):
+                        slot["name"] = fn["name"]
+                    if fn.get("arguments"):
+                        slot["args"] += fn["arguments"]
+                if choice.get("finish_reason"):
+                    stop_reason = choice["finish_reason"]
+
+        calls = []
+        for _, slot in sorted(pending.items()):
+            try:
+                args = json.loads(slot["args"]) if slot["args"].strip() else {}
+            except ValueError:
+                args = {}
+            calls.append(ToolCall(id=slot["id"] or f"call_{uuid.uuid4().hex[:12]}",
+                                  name=slot["name"], arguments=args))
+
+        return ModelResponse(
+            text="".join(text_parts), tool_calls=calls, usage=usage,
+            stop_reason="tool_calls" if calls else stop_reason, model=model,
         )
 
 

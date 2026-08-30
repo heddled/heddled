@@ -64,6 +64,32 @@ class Provider:
     ) -> ModelResponse:
         raise NotImplementedError
 
+    # Streaming is an optional capability, and deliberately shaped so that not
+    # having it is invisible to callers. A provider that cannot stream still
+    # answers this call — the whole reply simply arrives in one delta, which is
+    # exactly what the old behaviour looked like anyway.
+    #
+    # `on_delta(text)` is called with each fragment as it arrives. The return
+    # value is the same ModelResponse `complete` would have produced, so the
+    # engine emits the same events either way: tokens are a transport detail,
+    # never an entry in the event contract.
+    supports_streaming = False
+
+    def stream(
+        self,
+        system: str,
+        messages: list[dict],
+        on_delta,
+        tools: list[dict] = None,
+        max_tokens: int = 4096,
+        temperature: float = None,
+    ) -> ModelResponse:
+        response = self.complete(system, messages, tools=tools,
+                                 max_tokens=max_tokens, temperature=temperature)
+        if response.text:
+            on_delta(response.text)
+        return response
+
 
 class ProviderError(RuntimeError):
     pass

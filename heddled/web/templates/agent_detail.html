@@ -419,10 +419,22 @@
           {% else %}<span class="muted small">tick <b>let other systems use it</b></span>{% endif %}</td>
       </tr>
       <tr>
-        <td><b>The chat window</b>
-          <div class="muted small">You, or anyone who can open this console.</div></td>
+        <td><b>The Test tab</b>
+          <div class="muted small">You, while you are building it.</div></td>
         <td><a href="/agents/{{ agent.name }}/test">Try it</a></td>
         <td><span class="badge ok">yes</span></td>
+      </tr>
+      <tr>
+        <td><b>A chat page</b>
+          <div class="muted small">A colleague who has an account here but does
+            not run the place. They see this assistant and their own
+            conversations — none of the console.</div></td>
+        <td>{% if agent.expose.get('chat') %}<code class="copyable"
+              data-copy>{{ public_url }}/chat/{{ agent.name }}</code>
+          {% else %}<span class="muted small">—</span>{% endif %}</td>
+        <td>{% if agent.expose.get('chat') %}<span class="badge ok">yes</span>
+          {% else %}<span class="muted small">tick <b>let colleagues chat with
+            it</b></span>{% endif %}</td>
       </tr>
     </tbody>
   </table>
@@ -489,10 +501,22 @@
               <option value="none" {{ 'selected' if (agent.memory or {}).get('session','auto') == 'none' }}>no</option>
             </select>
           </label>
+          {#- The marker travels whether or not the boxes are ticked, so the
+              handler can tell "unticked" from "not on this form". -#}
+          <input type="hidden" name="expose_present" value="1">
           <label class="check">
             <input type="checkbox" name="expose_mcp" {{ 'checked' if agent.expose.get('mcp') }}>
             Let other systems use this agent as a tool
           </label>
+          <label class="check">
+            <input type="checkbox" name="expose_chat" {{ 'checked' if agent.expose.get('chat') }}>
+            Let colleagues chat with it
+          </label>
+          <p class="hint">Gives it a page of its own at
+            <code>/chat/{{ agent.name }}</code>. Anyone with an account here can
+            open it and talk to this assistant — they see their own conversations
+            and none of the console. Everything they say is recorded, and the
+            rules above still apply.</p>
         </div>
 
         <h3>Where people can reach it</h3>

@@ -1,0 +1,169 @@
+{#- Deliberately does NOT extend base.html. The console's nav, its search, its
+    badge counts and every screen anybody adds to it later are all in that
+    template; a surface built by hiding parts of it leaks the first time
+    somebody adds a link and forgets this page exists. Standalone is the whole
+    security property. -#}
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>{{ agent.name }}</title>
+<link rel="icon" href="/static/brand/icon.svg" type="image/svg+xml">
+<link rel="stylesheet" href="/static/console.css">
+</head>
+<body class="chat-page">
+
+<header class="chat-head">
+  <span class="chat-who">
+    <svg class="brand-mark" viewBox="0 0 64 64" fill="none" stroke-linecap="square"
+         aria-hidden="true" focusable="false">
+      <g stroke="currentColor" stroke-width="7.5">
+        <path d="M18 6 V26 M18 38 V58"/><path d="M46 6 V26 M46 38 V58"/>
+        <path d="M6 18 H26 M38 18 H58"/><path d="M6 50 H26 M38 50 H58"/>
+      </g>
+      <path d="M6 34 H34" stroke="var(--brand-thread, #B4442E)" stroke-width="7.5"/>
+      <circle cx="48" cy="34" r="6.5" fill="var(--brand-thread, #B4442E)"/>
+    </svg>
+    <b>{{ agent.name }}</b>
+    {% if agent.description %}<span class="muted small">{{ agent.description }}</span>{% endif %}
+  </span>
+  <span class="spacer"></span>
+  {% if threads %}
+  <details class="chat-threads">
+    <summary>Earlier</summary>
+    <ul>
+      {% for t in threads %}
+      <li><a href="?session={{ t['id'] }}">{{ t['updated_at'] | ago }}</a></li>
+      {% endfor %}
+    </ul>
+  </details>
+  {% endif %}
+  <a class="btn tiny" href="/chat/{{ agent.name }}">New</a>
+</header>
+
+<main class="chat-main">
+  <div id="chat" class="chat-log" aria-live="polite" aria-atomic="false">
+    {% for m in history %}
+    <div class="bubble {{ 'user' if m.role == 'you' else 'agent' }}">{{ m.text }}</div>
+    {% else %}
+    <div class="chat-empty" id="chat-empty">
+      <p>Ask {{ agent.name }} something.</p>
+      <p class="muted small">Replies are recorded, so whoever looks after this
+        assistant can see what it did.</p>
+    </div>
+    {% endfor %}
+  </div>
+
+  <form id="chat-form" class="chat-form" autocomplete="off">
+    <input id="chat-input" name="text" placeholder="Type a message"
+           aria-label="Your message" autofocus>
+    <button class="btn primary" type="submit">Send</button>
+  </form>
+</main>
+
+<script>
+const AGENT = {{ agent.name | tojson }};
+let sessionId = {{ (session_id or '') | tojson }} || null;
+let stream = null, live = null;
+
+const log = document.getElementById('chat');
+const form = document.getElementById('chat-form');
+const input = document.getElementById('chat-input');
+const sendBtn = form.querySelector('button[type=submit]');
+
+function bubble(role, text, cls) {
+  const empty = document.getElementById('chat-empty');
+  if (empty) empty.hidden = true;
+  const el = document.createElement('div');
+  el.className = `bubble ${role} ${cls || ''}`;
+  el.textContent = text || '';
+  log.append(el);
+  el.scrollIntoView({block: 'end'});
+  return el;
+}
+
+function busy(on) {
+  input.disabled = on;
+  sendBtn.disabled = on;
+  if (!on) input.focus();
+}
+
+// One connection per conversation, carrying both the spine events and the
+// token deltas. Deltas have their own event name and are never stored, so a
+// reload rebuilds the same conversation from the events alone.
+function connect(sid) {
+  if (stream) stream.close();
+  stream = new EventSource(`/chat/${AGENT}/stream/${sid}`);
+
+  stream.addEventListener('model.delta', (e) => {
+    const {text} = JSON.parse(e.data);
+    if (!live) { live = bubble('agent', ''); live.classList.add('streaming'); }
+    live.textContent += text;
+    live.scrollIntoView({block: 'end'});
+  });
+
+  // The authoritative reply. Replaces whatever streamed, so a dropped delta
+  // cannot leave a half-sentence on screen.
+  stream.addEventListener('message.sent', (e) => {
+    const text = (JSON.parse(e.data).payload || {}).text || '';
+    if (live) { live.classList.remove('streaming'); live.textContent = text; }
+    else if (text) bubble('agent', text);
+    live = null;
+    busy(false);
+  });
+
+  stream.addEventListener('approval.requested', () => {
+    if (live) { live.remove(); live = null; }
+    bubble('agent', 'Waiting for someone to approve this before it can go further. '
+                  + 'You will see the answer here once they do.', 'paused');
+    busy(false);
+  });
+
+  stream.addEventListener('turn.completed', () => busy(false));
+
+  stream.addEventListener('error.raised', (e) => {
+    const p = (JSON.parse(e.data).payload || {});
+    if (live) { live.remove(); live = null; }
+    bubble('agent', p.message || 'That did not finish. Try again in a moment.', 'err');
+    busy(false);
+  });
+}
+
+form.addEventListener('submit', async (e) => {
+  e.preventDefault();
+  const text = input.value.trim();
+  if (!text || sendBtn.disabled) return;
+  input.value = '';
+  bubble('user', text);
+  busy(true);
+  live = null;
+
+  let r, d;
+  try {
+    r = await fetch(`/chat/${AGENT}/messages`, {
+      method: 'POST', headers: {'content-type': 'application/json'},
+      body: JSON.stringify({text, session_id: sessionId})
+    });
+    d = await r.json();
+  } catch (err) {
+    bubble('agent', 'Could not reach the server. Your message was not sent.', 'err');
+    busy(false);
+    return;
+  }
+  if (!r.ok) {
+    bubble('agent', d.error || 'That could not be sent.', 'err');
+    busy(false);
+    return;
+  }
+  if (!sessionId) {
+    sessionId = d.session_id;
+    history.replaceState(null, '', `?session=${sessionId}`);
+    connect(sessionId);
+  }
+});
+
+if (sessionId) connect(sessionId);
+</script>
+</body>
+</html>

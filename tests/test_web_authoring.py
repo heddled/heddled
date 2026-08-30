@@ -137,11 +137,26 @@ class TestFormEditing:
         client.post("/agents/support/fields", data={"channels": "webchat"})
         assert registry.get_agent("support").channels == ["webchat"]
 
-    def test_the_mcp_toggle_round_trips(self, client, registry):
-        client.post("/agents/support/fields", data={"expose_mcp": "off"})
-        assert registry.get_agent("support").expose == {"mcp": False}
-        client.post("/agents/support/fields", data={"expose_mcp": "on"})
-        assert registry.get_agent("support").expose == {"mcp": True}
+    def test_the_expose_toggles_round_trip(self, client, registry):
+        """Posted the way a browser posts a checkbox: `on` when ticked, and the
+        name absent entirely when not. The hidden `expose_present` is what
+        distinguishes "unticked" from "this form has no expose section" — before
+        it existed, a box could be ticked and never unticked."""
+        def expose():
+            return registry.get_agent("support").expose
+
+        client.post("/agents/support/fields",
+                    data={"expose_present": "1", "expose_mcp": "on"})
+        assert expose() == {"mcp": True, "chat": False}
+
+        client.post("/agents/support/fields", data={"expose_present": "1"})
+        assert expose() == {"mcp": False, "chat": False}
+
+    def test_a_form_without_the_expose_section_leaves_it_alone(self, client, registry):
+        client.post("/agents/support/fields",
+                    data={"expose_present": "1", "expose_chat": "on"})
+        client.post("/agents/support/fields", data={"description": "Still here."})
+        assert registry.get_agent("support").expose.get("chat") is True
 
 
 class TestRawEditing:

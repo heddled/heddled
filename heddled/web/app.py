@@ -54,7 +54,7 @@ from ..runtime import (
     resolve_approval,
     submit_message,
 )
-from ..store import get_store
+from ..store import Ephemeral, get_store
 from ..worker import ensure_worker
 
 HERE = Path(__file__).parent
@@ -577,8 +577,17 @@ def register_console(app: Flask) -> None:
 
         if "memory_session" in form:
             updates["memory"] = {"session": form["memory_session"]}
-        if "expose_mcp" in form:
-            updates["expose"] = {"mcp": form.get("expose_mcp") == "on"}
+        if "expose_present" in form:
+            # An unticked checkbox submits nothing at all, so keying off the
+            # checkbox itself meant a box could be ticked but never unticked —
+            # somebody closing an endpoint got a "saved" and an endpoint that
+            # was still open. The hidden marker says the section was submitted;
+            # the boxes then say on or off. Existing keys are carried over so a
+            # hand-written `expose:` entry the form knows nothing about survives.
+            expose = dict((get_registry().get_agent(name).raw.get("expose") or {}))
+            expose["mcp"] = form.get("expose_mcp") == "on"
+            expose["chat"] = form.get("expose_chat") == "on"
+            updates["expose"] = expose
 
         try:
             written = authoring.update_agent_fields(name, updates)
@@ -1687,6 +1696,157 @@ def register_api(app: Flask) -> None:
             stream_with_context(generate()),
             mimetype="text/event-stream",
             headers={"Cache-Control": "no-cache", "X-Accel-Buffering": "no"},
+        )
+
+    # =========================================================== chat surface
+    #
+    # A place to talk to an agent without operating one. Open to anybody who can
+    # already sign in — there is no separate account type — but it renders none
+    # of the console, and an agent appears here only if its file opts in with
+    # `expose: { chat: true }`.
+
+    def _chat_agents():
+        """Agents that have opted in, in name order."""
+        return [a for _, a in sorted(get_registry().agents().items())
+                if (a.expose or {}).get("chat")]
+
+    def _chat_agent_or_404(name):
+        """404 rather than 403 for an agent that has not opted in: whether a
+        given agent exists is not something this surface should confirm."""
+        agent = get_registry().get_agent(name)
+        if not agent or not (agent.expose or {}).get("chat"):
+            abort(404)
+        return agent
+
+    @app.route("/chat")
+    def chat_index():
+        agents = _chat_agents()
+        # One agent is the common case; a menu of one is a click for nothing.
+        if len(agents) == 1:
+            return redirect(url_for("chat_agent", name=agents[0].name))
+        return render_template("chat_index.html", agents=agents)
+
+    @app.route("/chat/<name>")
+    def chat_agent(name):
+        agent = _chat_agent_or_404(name)
+        who = (getattr(g, "user", None) or {}).get("username")
+        sid = request.args.get("session")
+        history, session = [], None
+        if sid:
+            session = get_store().get_session(sid)
+            # Somebody else's conversation is not yours to open, whatever your
+            # role is on the console. The chat surface shows your threads only.
+            if not session or not _mine(session, who, agent.name):
+                abort(404)
+            history = _chat_history(sid)
+        mine = get_store().list_sessions(agent=agent.name, channel="chat",
+                                         who=who, limit=20)
+        return render_template("chat.html", agent=agent, session_id=sid,
+                               history=history, threads=mine, who=who)
+
+    def _chat_history(sid: str) -> list[dict]:
+        """The conversation as the person had it — the two message events only.
+
+        Deliberately not the trace: what the agent looked up and what it decided
+        belong to whoever operates it, and this page is not that.
+        """
+        out = []
+        for ev in get_store().events_for_session(sid):
+            if ev.type == "message.received":
+                out.append({"role": "you", "text": ev.payload.get("text") or ""})
+            elif ev.type == "message.sent":
+                out.append({"role": "agent", "text": ev.payload.get("text") or ""})
+        return out
+
+    def _mine(session, who: str, agent_name: str = None) -> bool:
+        if session["channel"] != "chat":
+            return False
+        if agent_name and session["agent"] != agent_name:
+            return False
+        try:
+            origin = json.loads(session["trigger_origin"] or "{}")
+        except ValueError:
+            origin = {}
+        return origin.get("who") == who
+
+    @app.route("/chat/<name>/messages", methods=["POST"])
+    def chat_send(name):
+        agent = _chat_agent_or_404(name)
+        who = (getattr(g, "user", None) or {}).get("username")
+        body = request.get_json(silent=True) or {}
+        text = (body.get("text") or "").strip()
+        if not text:
+            return {"error": "say something first"}, 400
+
+        sid = body.get("session_id") or None
+        if sid:
+            session = get_store().get_session(sid)
+            if not session or not _mine(session, who, agent.name):
+                abort(404)
+
+        # Not `sync`: the whole point of this surface is that the reply arrives
+        # as it is written, over the stream opened below.
+        result = submit_message(
+            agent.name, text, session_id=sid, channel="chat",
+            origin={"kind": "chat", "who": who}, sender=who,
+            env=runtime_env(None),
+        )
+        return jsonify({"session_id": result["session_id"],
+                        "turn_id": result.get("turn_id")})
+
+    @app.route("/chat/<name>/stream/<sid>")
+    def chat_stream(name, sid):
+        """Spine events for one conversation, plus the token deltas.
+
+        Deltas are ephemeral broadcasts rather than events (they are not on the
+        contract and are never stored), so they arrive here as their own SSE
+        event name and a client that ignores them still sees every reply.
+        """
+        _chat_agent_or_404(name)
+        store = get_store()
+        who = (getattr(g, "user", None) or {}).get("username")
+        session = store.get_session(sid)
+        if not session or not _mine(session, who, name):
+            abort(404)
+        watcher_id = (getattr(g, "user", None) or {}).get("id")
+        after = int(request.args.get("after", 0))
+
+        def generate():
+            q: queue.Queue = queue.Queue(maxsize=1000)
+            store.subscribe(q)
+            try:
+                for ev in store.events_for_session(sid, after_seq=after):
+                    yield _sse(ev)
+                last_ping = last_check = time.time()
+                while True:
+                    try:
+                        item = q.get(timeout=5)
+                        if item.session_id == sid:
+                            if isinstance(item, Ephemeral):
+                                yield (f"event: {item.kind}\n"
+                                       f"data: {json.dumps(item.payload)}\n\n")
+                            else:
+                                yield _sse(item)
+                    except queue.Empty:
+                        pass
+                    now = time.time()
+                    # Same re-check as the console stream: a stream opened once
+                    # would otherwise outlive a suspended account indefinitely.
+                    if watcher_id and now - last_check > 30:
+                        last_check = now
+                        if not auth.still_allowed(store, watcher_id):
+                            return
+                    if now - last_ping > 15:
+                        last_ping = now
+                        yield ": ping\n\n"
+            finally:
+                store.unsubscribe(q)
+
+        return Response(
+            stream_with_context(generate()),
+            mimetype="text/event-stream",
+            headers={"Cache-Control": "no-cache", "X-Accel-Buffering": "no",
+                     "Connection": "keep-alive"},
         )
 
 

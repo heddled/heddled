@@ -15,6 +15,7 @@ import threading
 import time
 import zlib
 from pathlib import Path
+from dataclasses import dataclass
 from typing import Any, Iterable, Optional
 
 from . import config
@@ -252,6 +253,15 @@ def _decode(blob: bytes, encoding: str = "zlib+json") -> dict:
     return json.loads(zlib.decompress(blob).decode("utf-8"))
 
 
+@dataclass
+class Ephemeral:
+    """Not an event. Broadcast to live listeners, never stored, never replayed."""
+
+    session_id: str
+    kind: str
+    payload: dict
+
+
 class Store:
     """Thread-safe-enough SQLite wrapper: one connection per thread."""
 
@@ -393,7 +403,19 @@ class Store:
             if queue in self._subscribers:
                 self._subscribers.remove(queue)
 
-    def _notify(self, event: Event) -> None:
+    def broadcast(self, session_id: str, kind: str, payload: dict) -> None:
+        """Send something to live listeners without writing it down.
+
+        Token deltas need the fan-out that events already have, but they must
+        not become events: a paragraph is a thousand of them, and the event
+        store is the audit log, not a transport. So they go on the same
+        subscriber queues wrapped in a marker the SSE layer recognises, and
+        nothing is persisted. A listener that misses every delta still
+        reconstructs the conversation from `model.responded` alone.
+        """
+        self._notify(Ephemeral(session_id=session_id, kind=kind, payload=payload))
+
+    def _notify(self, event) -> None:
         with self._sub_lock:
             subs = list(self._subscribers)
         for q in subs:
@@ -456,6 +478,7 @@ class Store:
         status: str = None,
         channel: str = None,
         origin: str = None,
+        who: str = None,
         env: str = None,
         limit: int = 100,
     ) -> list[sqlite3.Row]:
@@ -476,6 +499,13 @@ class Store:
         if origin:
             sql += " AND trigger_origin LIKE ?"
             params.append(f'%"kind": "{origin}"%')
+        if who is not None:
+            # Whose conversation this is, recorded on the origin when a chat
+            # session starts. Scoping the chat surface to your own threads is a
+            # filter here rather than a join: the origin already travels with
+            # the session and is what the trace shows.
+            sql += " AND trigger_origin LIKE ?"
+            params.append(f'%"who": "{who}"%')
         sql += " ORDER BY updated_at DESC LIMIT ?"
         params.append(limit)
         return self.query(sql, params)
