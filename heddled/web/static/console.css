@@ -65,7 +65,7 @@ code, pre, .mono { font-family: var(--mono); }
 .cols { display: grid; grid-template-columns: 1fr 1fr; gap: 16px; }
 @media (max-width: 900px) { .cols { grid-template-columns: 1fr; } }
 .card {
-  background: var(--panel); border: 1px solid var(--line); border-radius: 6px;
+  background: var(--panel); border: 1px solid var(--line); border-radius: var(--radius-box);
   padding: 14px 16px; margin: 16px 0;
 }
 .card h2:first-child { margin-top: 0; }
@@ -95,7 +95,7 @@ table.settings td:first-child { width: 40%; }
 
 /* -------------------------------------------------------------- chips */
 .badge {
-  display: inline-block; padding: 1px 6px; border-radius: 3px; font-size: 11px;
+  display: inline-block; padding: 1px 6px; border-radius: var(--radius); font-size: 11px;
   background: var(--panel-2); border: 1px solid var(--line); color: var(--muted);
   font-family: var(--mono);
 }
@@ -107,7 +107,7 @@ table.settings td:first-child { width: 40%; }
    sees, so it stays quiet; prod is real traffic and is marked as such, with a
    left edge on the row so you can pick it out while scanning. */
 .env-tag {
-  display: inline-block; padding: 1px 6px; border-radius: 3px; font-size: 11px;
+  display: inline-block; padding: 1px 6px; border-radius: var(--radius); font-size: 12px;
   font-family: var(--mono); background: var(--panel-2);
   border: 1px solid var(--line); color: var(--muted);
 }
@@ -119,9 +119,9 @@ tr.env-prod td:first-child    { box-shadow: inset 3px 0 0 var(--bad); }
 tr.env-staging td:first-child { box-shadow: inset 3px 0 0 var(--warn); }
 
 .chips { list-style: none; padding: 0; margin: 4px 0; display: flex; gap: 6px; flex-wrap: wrap; }
-.chip { padding: 2px 8px; border-radius: 3px; background: var(--panel-2);
+.chip { padding: 2px 8px; border-radius: var(--radius); background: var(--panel-2);
         border: 1px solid var(--line); font-family: var(--mono); font-size: 12px; }
-.status { font-size: 11px; font-family: var(--mono); padding: 1px 6px; border-radius: 3px;
+.status { font-size: 11px; font-family: var(--mono); padding: 1px 6px; border-radius: var(--radius);
           border: 1px solid var(--line); }
 .status.running { color: var(--accent); border-color: var(--accent); }
 .status.ended { color: var(--ok); border-color: var(--ok); }
@@ -130,7 +130,9 @@ tr.env-staging td:first-child { box-shadow: inset 3px 0 0 var(--warn); }
 
 /* -------------------------------------------------------------- buttons */
 .btn {
-  display: inline-block; padding: 5px 11px; border-radius: 4px; font-size: 13px;
+  display: inline-flex; align-items: center; justify-content: center;
+  min-height: var(--tap); padding: 5px 11px; border-radius: var(--radius);
+  font-size: var(--field-font);
   border: 1px solid var(--line); background: var(--panel-2); color: var(--text);
   cursor: pointer; font-family: inherit;
 }
@@ -140,9 +142,17 @@ tr.env-staging td:first-child { box-shadow: inset 3px 0 0 var(--warn); }
 .btn.ok { color: var(--ok); border-color: var(--ok); }
 .btn.tiny { padding: 2px 7px; font-size: 12px; }
 
+/* `font: inherit` made a control's size depend on where it happened to sit:
+   14px from the body, 13px inside anything that set 13px — and the height
+   followed, which is how one text field came to have twelve different heights
+   across the app. The family is inherited; the size is not. */
 input, select, textarea {
   background: var(--panel-2); color: var(--text); border: 1px solid var(--line);
-  border-radius: 4px; padding: 5px 8px; font: inherit;
+  border-radius: var(--radius); padding: var(--field-pad);
+  font-family: inherit; font-size: var(--field-font); line-height: 1.45;
+}
+input:not([type=checkbox]):not([type=radio]), select, textarea {
+  min-height: var(--tap);
 }
 input:focus, select:focus, textarea:focus { outline: 1px solid var(--accent); }
 input.wide { width: 100%; }
@@ -151,7 +161,7 @@ textarea.code { width: 100%; font-family: var(--mono); font-size: 12.5px;
 .filters { display: flex; gap: 8px; flex-wrap: wrap; margin: 12px 0; align-items: center; }
 
 pre.payload {
-  background: var(--panel-2); border: 1px solid var(--line); border-radius: 4px;
+  background: var(--panel-2); border: 1px solid var(--line); border-radius: var(--radius);
   padding: 10px; overflow-x: auto; font-size: 12px; margin: 6px 0;
   white-space: pre-wrap; word-break: break-word; max-height: 460px; overflow-y: auto;
 }
@@ -165,7 +175,7 @@ pre.payload.err { border-color: var(--bad); color: var(--bad); }
 .trace.diff { grid-template-columns: 1fr 1fr 1fr; }
 @media (max-width: 900px) { .trace, .trace.diff { grid-template-columns: 1fr; height: auto; } }
 .timeline-pane, .detail-pane {
-  background: var(--panel); border: 1px solid var(--line); border-radius: 6px;
+  background: var(--panel); border: 1px solid var(--line); border-radius: var(--radius-box);
   display: flex; flex-direction: column; overflow: hidden; min-height: 0;
 }
 .pane-head {
@@ -215,7 +225,7 @@ pre.payload.err { border-color: var(--bad); color: var(--bad); }
              margin: 0 0 10px; font-size: 12px; }
 .detail dt { color: var(--muted); font-family: var(--mono); }
 .detail dd { margin: 0; font-family: var(--mono); word-break: break-word; }
-.detail .ctx-msg { border: 1px solid var(--line); border-radius: 4px; margin: 6px 0;
+.detail .ctx-msg { border: 1px solid var(--line); border-radius: var(--radius); margin: 6px 0;
                    overflow: hidden; }
 .detail .ctx-msg > .role { background: var(--panel-2); padding: 3px 8px; font-size: 11px;
                            color: var(--muted); font-family: var(--mono); }
@@ -226,11 +236,11 @@ pre.payload.err { border-color: var(--bad); color: var(--bad); }
 .harness { display: grid; grid-template-columns: 400px 1fr; gap: 12px;
            height: calc(100vh - 130px); }
 @media (max-width: 900px) { .harness { grid-template-columns: 1fr; height: auto; } }
-.chat-pane { background: var(--panel); border: 1px solid var(--line); border-radius: 6px;
+.chat-pane { background: var(--panel); border: 1px solid var(--line); border-radius: var(--radius-box);
              display: flex; flex-direction: column; overflow: hidden; }
 .chat { flex: 1; overflow-y: auto; padding: 12px; display: flex; flex-direction: column;
         gap: 8px; }
-.bubble { padding: 8px 11px; border-radius: 10px; max-width: 90%; white-space: pre-wrap;
+.bubble { padding: 8px 11px; border-radius: var(--radius-lg); max-width: 90%; white-space: pre-wrap;
           word-break: break-word; font-size: 13px; }
 .bubble.user { align-self: flex-end; background: var(--accent); color: #0f1115; }
 .bubble.agent { align-self: flex-start; background: var(--panel-2);
@@ -248,13 +258,13 @@ pre.payload.err { border-color: var(--bad); color: var(--bad); }
                flex-wrap: wrap; margin-bottom: 10px; }
 .turn-header h1 { font-size: 15px; }
 .approvals { margin: 8px 0; }
-.approval { background: var(--panel); border: 1px solid var(--warn); border-radius: 6px;
+.approval { background: var(--panel); border: 1px solid var(--warn); border-radius: var(--radius-box);
             padding: 8px 12px; margin-bottom: 6px; display: flex; gap: 10px;
             align-items: center; flex-wrap: wrap; font-size: 13px; }
 .approval.approved { border-color: var(--ok); }
 .approval.denied { border-color: var(--bad); }
 .notice { background: var(--panel-2); border-left: 3px solid var(--accent);
-          padding: 8px 12px; margin: 10px 0; border-radius: 3px; }
+          padding: 8px 12px; margin: 10px 0; border-radius: var(--radius); }
 .subsessions { margin: 6px 0; color: var(--muted); }
 .subsessions a { margin-left: 8px; }
 /* The template emits `passed`/`failed`, from `c.passed`. These rules said
@@ -262,7 +272,7 @@ pre.payload.err { border-color: var(--bad); color: var(--bad); }
    drawn — the badge carried the whole signal on its own. */
 .case.passed { border-left: 3px solid var(--ok); }
 .case.failed { border-left: 3px solid var(--bad); }
-kbd { background: var(--panel-2); border: 1px solid var(--line); border-radius: 3px;
+kbd { background: var(--panel-2); border: 1px solid var(--line); border-radius: var(--radius);
       padding: 0 4px; font-family: var(--mono); font-size: 12px; }
 
 
@@ -289,6 +299,19 @@ kbd { background: var(--panel-2); border: 1px solid var(--line); border-radius: 
 
   --s1: 4px; --s2: 8px; --s3: 12px; --s4: 16px; --s5: 24px; --s6: 32px;
   --tap: 34px;                       /* comfortable minimum hit target */
+
+  /* Corners and control sizing. There were tokens for spacing and none for
+     these, so radii drifted to 3, 4, 6, 9, 10 and 14px across the app and a
+     text field could be any of a dozen heights. Three radii is the whole
+     vocabulary: controls, boxes, chips. */
+  --radius: 4px;                     /* inputs, buttons, small controls */
+  --radius-box: 6px;                 /* cards, panels, anything containing */
+  --radius-lg: 10px;                 /* big surfaces: menus, bubbles */
+  --radius-pill: 999px;              /* chips and openers */
+  --field-font: 13px;
+  --tap-sm: 26px;                    /* the compact scale, in pane headers */
+  --field-font-sm: 12px;
+  --field-pad: 6px 9px;
   --sans: system-ui, -apple-system, "Segoe UI", Roboto, Helvetica, Arial, sans-serif;
   --shadow-1: 0 1px 2px rgb(0 0 0 / .28);
   --shadow-2: 0 10px 30px rgb(0 0 0 / .38);
@@ -305,7 +328,7 @@ kbd { background: var(--panel-2); border: 1px solid var(--line); border-radius: 
 :focus-visible {
   outline: 2px solid var(--accent);
   outline-offset: 2px;
-  border-radius: 3px;
+  border-radius: var(--radius);
 }
 input:focus, select:focus, textarea:focus { outline: 2px solid var(--accent);
                                             outline-offset: -1px; }
@@ -324,7 +347,7 @@ input:focus, select:focus, textarea:focus { outline: 2px solid var(--accent);
 .skip-link {
   position: absolute; left: var(--s3); top: -60px; z-index: 100;
   background: var(--panel); color: var(--text); padding: var(--s2) var(--s3);
-  border: 1px solid var(--accent); border-radius: 4px;
+  border: 1px solid var(--accent); border-radius: var(--radius);
 }
 .skip-link:focus { top: var(--s2); }
 
@@ -338,7 +361,8 @@ input:focus, select:focus, textarea:focus { outline: 2px solid var(--accent);
 }
 .btn:hover { background: color-mix(in srgb, var(--text) 8%, var(--panel-2)); }
 .btn.primary:hover { background: color-mix(in srgb, #000 14%, var(--accent)); }
-.btn.tiny { min-height: 26px; padding: 0 var(--s2); }
+.btn.tiny { min-height: var(--tap-sm); padding: 0 var(--s2);
+            font-size: var(--field-font-sm); }
 @media (pointer: coarse) { .btn.tiny { min-height: 32px; } }
 .btn.danger { color: var(--bad); border-color: var(--bad-line); }
 .btn.danger:hover { background: var(--bad-bg); border-color: var(--bad); }
@@ -378,7 +402,7 @@ input:focus, select:focus, textarea:focus { outline: 2px solid var(--accent);
 
 label.check {
   display: flex; align-items: flex-start; gap: var(--s2); cursor: pointer;
-  font-size: 13.5px; line-height: 1.5; padding: var(--s1) 0; min-height: var(--tap);
+  font-size: var(--field-font); line-height: 1.5; padding: var(--s1) 0; min-height: var(--tap);
 }
 label.check input { width: 16px; height: 16px; margin: 3px 0 0; flex: none;
                     accent-color: var(--accent); }
@@ -416,11 +440,11 @@ form.inline { display: inline; }
 
 textarea.prose { font-family: var(--sans); font-size: 14px; line-height: 1.65;
                  width: 100%; background: var(--bg); color: var(--text);
-                 border: 1px solid var(--line); border-radius: 4px;
+                 border: 1px solid var(--line); border-radius: var(--radius);
                  padding: var(--s2) var(--s3); resize: vertical; }
 
 /* --- banners ------------------------------------------------------------- */
-.banner { padding: var(--s3) var(--s4); border-radius: 6px; margin: 0 0 var(--s4);
+.banner { padding: var(--s3) var(--s4); border-radius: var(--radius-box); margin: 0 0 var(--s4);
           font-size: 13.5px; line-height: 1.55;
           border: 1px solid var(--line); background: var(--panel); }
 .banner.ok   { border-color: var(--ok-line);   background: var(--ok-bg); }
@@ -440,7 +464,7 @@ textarea.prose { font-family: var(--sans); font-size: 14px; line-height: 1.65;
          gap: var(--s3); margin-bottom: var(--s5); }
 .pick-card {
   display: block; padding: var(--s4) var(--s4) var(--s5); text-decoration: none;
-  border: 1px solid var(--line); border-radius: 6px;
+  border: 1px solid var(--line); border-radius: var(--radius-box);
   background: var(--panel); color: var(--text);
   transition: border-color .12s ease, box-shadow .12s ease, transform .12s ease;
 }
@@ -453,20 +477,20 @@ textarea.prose { font-family: var(--sans); font-size: 14px; line-height: 1.65;
 .pick-card.subtle:hover { opacity: 1; }
 
 .wizard { max-width: 720px; }
-.wizard .step { border: 1px solid var(--line); border-radius: 6px;
+.wizard .step { border: 1px solid var(--line); border-radius: var(--radius-box);
                 padding: var(--s4) var(--s4) var(--s5); margin-bottom: var(--s4);
                 background: var(--panel); min-width: 0; }
 .wizard legend { padding: 0 var(--s2); font-size: 11.5px; font-weight: 650;
                  color: var(--muted); text-transform: uppercase; letter-spacing: .07em; }
 
-.modal { border: 1px solid var(--line); border-radius: 10px; padding: var(--s5);
+.modal { border: 1px solid var(--line); border-radius: var(--radius-lg); padding: var(--s5);
          background: var(--panel); color: var(--text); box-shadow: var(--shadow-2);
          min-width: min(520px, 92vw); max-width: 92vw; }
 .modal::backdrop { background: rgb(0 0 0 / .55); }
 .modal h2 { margin-top: 0; }
 
 /* --- onboarding ---------------------------------------------------------- */
-.onboard { border: 1px solid var(--line); border-radius: 6px; background: var(--panel);
+.onboard { border: 1px solid var(--line); border-radius: var(--radius-box); background: var(--panel);
            padding: var(--s5); margin: var(--s3) 0 var(--s5); max-width: 760px; }
 .onboard h2 { margin: 0 0 var(--s3); font-size: 16px; }
 .onboard.compact { border: 0; background: none; padding: var(--s3) 0; margin: 0;
@@ -477,7 +501,7 @@ textarea.prose { font-family: var(--sans); font-size: 14px; line-height: 1.65;
 
 /* --- agent detail -------------------------------------------------------- */
 .quick-facts { display: flex; flex-wrap: wrap; gap: var(--s2); margin: 0 0 var(--s5); }
-.quick-facts > div { border: 1px solid var(--line); border-radius: 4px;
+.quick-facts > div { border: 1px solid var(--line); border-radius: var(--radius);
                      padding: var(--s2) var(--s4); font-size: 14px;
                      background: var(--panel); min-width: 118px; }
 .qf-label { display: block; font-size: 12px; text-transform: uppercase;
@@ -502,7 +526,7 @@ details.rename { display: inline-block; font-size: 13px; font-weight: 400;
                  vertical-align: middle; margin-left: var(--s3); position: relative; }
 details.rename > summary {
   cursor: pointer; color: var(--muted); list-style: none; user-select: none;
-  padding: 2px var(--s2); border: 1px solid transparent; border-radius: 5px;
+  padding: 2px var(--s2); border: 1px solid transparent; border-radius: var(--radius);
   min-height: var(--tap); display: inline-flex; align-items: center;
 }
 details.rename > summary::-webkit-details-marker { display: none; }
@@ -513,7 +537,7 @@ details.rename[open] > summary { color: var(--text); border-color: var(--line); 
 .rename-panel {
   position: absolute; top: calc(100% + var(--s2)); left: 0; z-index: 20;
   min-width: 22rem; max-width: min(92vw, 30rem);
-  background: var(--panel); border: 1px solid var(--line); border-radius: 6px;
+  background: var(--panel); border: 1px solid var(--line); border-radius: var(--radius-box);
   padding: var(--s3); box-shadow: 0 8px 24px rgb(0 0 0 / .18);
 }
 .rename-panel form { display: flex; gap: var(--s2); align-items: center; }
@@ -567,7 +591,7 @@ details.rename[open] > summary { color: var(--text); border-color: var(--line); 
 
 /* --- approvals ----------------------------------------------------------- */
 .approvals { margin-bottom: var(--s4); }
-.approval { border: 1px solid var(--line); border-radius: 6px; background: var(--panel);
+.approval { border: 1px solid var(--line); border-radius: var(--radius-box); background: var(--panel);
             padding: var(--s3) var(--s4); margin-bottom: var(--s2); font-size: 13.5px; }
 .approval.pending { display: flex; justify-content: space-between; align-items: center;
                     gap: var(--s5); flex-wrap: wrap;
@@ -603,8 +627,8 @@ details.rename[open] > summary { color: var(--text); border-color: var(--line); 
 /* Badges carry plain words now ("someone chatting", "asks you first"), and
    monospace made them look like machine output. Technical values opt back in. */
 .badge { font-family: var(--sans); font-size: 12px; padding: 2px var(--s2);
-         border-radius: 999px; line-height: 1.6; }
-.badge.mono { font-family: var(--mono); border-radius: 4px; }
+         border-radius: var(--radius-pill); line-height: 1.6; }
+.badge.mono { font-family: var(--mono); border-radius: var(--radius); }
 
 /* The checkbox inside the inline rule builder inherited the big form sizing. */
 .policy-form label.check { min-height: 0; padding: 0; gap: var(--s2); }
@@ -618,7 +642,7 @@ details.rename[open] > summary { color: var(--text); border-color: var(--line); 
 /* The story sat directly on the page background with a ragged right edge.
    It is content: it belongs on a surface. */
 .story-wrap {
-  border: 1px solid var(--line); border-radius: 6px; background: var(--panel);
+  border: 1px solid var(--line); border-radius: var(--radius-box); background: var(--panel);
   padding: var(--s2) var(--s3); max-width: 940px;
 }
 .story { max-width: none; }
@@ -729,7 +753,7 @@ label.check input[type="checkbox"] { width: 18px; height: 18px; }
 .opener {
   font: 13px/1.4 var(--sans); text-align: left; cursor: pointer;
   color: var(--accent); background: var(--panel-2);
-  border: 1px solid var(--line); border-radius: 999px;
+  border: 1px solid var(--line); border-radius: var(--radius-pill);
   padding: var(--s2) var(--s3); min-height: 30px;
   transition: border-color .12s ease, background .12s ease;
 }
@@ -745,7 +769,7 @@ label.check input[type="checkbox"] { width: 18px; height: 18px; }
 }
 
 kbd {
-  font: 11px/1 var(--mono); padding: 3px 5px; border-radius: 3px;
+  font: 11px/1 var(--mono); padding: 3px 5px; border-radius: var(--radius);
   background: var(--panel-2); border: 1px solid var(--line); color: var(--muted);
   margin-right: 2px;
 }
@@ -756,7 +780,8 @@ kbd {
 /* Pane headers sat at different heights because only one of them holds a
    control. Give them all the same box so the three panes line up. */
 .pane-head { min-height: 38px; padding: 0 var(--s3); }
-.pane-head input[type="search"] { min-height: 26px; padding: 0 var(--s2); font-size: 12px; }
+.pane-head input[type="search"] { min-height: var(--tap-sm);
+  padding: 0 var(--s2); font-size: var(--field-font-sm); }
 
 /* =========================================================================
    The approval page — the one screen someone outside Heddled ever sees.
@@ -771,7 +796,7 @@ body.standalone { background: var(--bg); }
 .ask .lede { font-size: 16px; margin-bottom: var(--s5); }
 
 .ask-detail {
-  margin: 0 0 var(--s5); border: 1px solid var(--line); border-radius: 6px;
+  margin: 0 0 var(--s5); border: 1px solid var(--line); border-radius: var(--radius-box);
   background: var(--panel); overflow: hidden;
 }
 .ask-detail > div {
@@ -796,9 +821,7 @@ body.standalone { background: var(--bg); }
 .trigger-form { margin-top: var(--s4); padding-top: var(--s4);
                 border-top: 1px solid var(--line); }
 .trigger-form textarea { width: 100%; margin-top: var(--s1); min-height: 0;
-  background: var(--bg); color: var(--text); border: 1px solid var(--line);
-  border-radius: 4px; padding: var(--s2) var(--s3); font: 13.5px/1.5 var(--sans);
-  resize: vertical; }
+  background: var(--bg); resize: vertical; }
 .trigger-form > label { margin-top: var(--s3); display: block; font-size: 13px; }
 
 /* People and account */
@@ -810,7 +833,7 @@ tr.suspended td { opacity: .55; }
 .inline-menu > summary::-webkit-details-marker { display: none; }
 .inline-menu .menu {
   position: absolute; right: 0; z-index: 30; min-width: 230px;
-  background: var(--panel); border: 1px solid var(--line); border-radius: 6px;
+  background: var(--panel); border: 1px solid var(--line); border-radius: var(--radius-box);
   padding: var(--s3); box-shadow: var(--shadow-2);
   display: flex; flex-direction: column; gap: var(--s2);
 }
@@ -837,7 +860,7 @@ tr.suspended td { opacity: .55; }
 .ask textarea {
   display: block; width: 100%; min-height: var(--tap);
   background: var(--bg); color: var(--text);
-  border: 1px solid var(--line); border-radius: var(--r1, 4px);
+  border: 1px solid var(--line); border-radius: var(--radius);
   padding: var(--s2) var(--s3); font: 14px/1.5 var(--sans);
 }
 .ask .hint { margin: var(--s1) 0 0; }
@@ -849,9 +872,9 @@ tr.suspended td { opacity: .55; }
                 gap: var(--s3) var(--s5); }
 .setting-row label { display: block; font-size: 13px; margin-bottom: var(--s1); }
 .setting-row label .mono { display: block; font-size: 12px; margin-top: 1px; }
-.setting-row input { width: 100%; min-height: var(--tap); background: var(--bg);
-  color: var(--text); border: 1px solid var(--line); border-radius: 4px;
-  padding: var(--s2) var(--s3); font-size: 13px; }
+/* Only what differs from the shared control: full width, and a darker ground
+   so a value reads as editable against the panel. */
+.setting-row input { width: 100%; background: var(--bg); }
 
 /* Settings rows: when one label wraps to two lines its field dropped out of
    line with its neighbours. Align the fields to the bottom of each cell. */
@@ -910,7 +933,7 @@ tr.suspended td { opacity: .55; }
 /* A tick-list long enough to bury the Save button gets its own scroll. */
 .checks.scroll {
   max-height: 24rem; overflow-y: auto; padding-right: var(--s2);
-  border: 1px solid var(--line); border-radius: 6px;
+  border: 1px solid var(--line); border-radius: var(--radius-box);
 }
 .checks.scroll li { padding-left: var(--s2); }
 
@@ -933,7 +956,7 @@ tr.suspended td { opacity: .55; }
   table.grid thead { display: none; }
   table.grid tbody, table.grid tr, table.grid td { display: block; width: auto; }
   table.grid tr {
-    border: 1px solid var(--line); border-radius: 8px; padding: var(--s3);
+    border: 1px solid var(--line); border-radius: var(--radius-box); padding: var(--s3);
     margin-bottom: var(--s3); background: var(--panel);
   }
   table.grid tr:hover { background: var(--panel); }
@@ -990,7 +1013,7 @@ tr.suspended td { opacity: .55; }
   .filter-panel > summary {
     display: flex; align-items: center; gap: var(--s2); cursor: pointer;
     list-style: none; min-height: var(--tap); font-size: 13px; color: var(--muted);
-    border: 1px solid var(--line); border-radius: 6px; padding: 0 var(--s3);
+    border: 1px solid var(--line); border-radius: var(--radius-box); padding: 0 var(--s3);
     margin: var(--s3) 0; background: var(--panel-2);
   }
   .filter-panel > summary::-webkit-details-marker { display: none; }
@@ -1002,7 +1025,7 @@ tr.suspended td { opacity: .55; }
 /* An address meant to be pasted somewhere else. Clicking copies it. */
 .copyable {
   display: inline-block; cursor: pointer; position: relative;
-  background: var(--panel-2); border: 1px solid var(--line); border-radius: 4px;
+  background: var(--panel-2); border: 1px solid var(--line); border-radius: var(--radius);
   padding: 3px var(--s3); font-size: 12px; word-break: break-all;
   min-height: var(--tap); line-height: 1.9;
 }
@@ -1022,7 +1045,8 @@ tr.suspended td { opacity: .55; }
 .chosen-chip {
   display: inline-flex; align-items: center; gap: var(--s2);
   min-height: 28px; padding: 2px var(--s2) 2px var(--s3);
-  border: 1px solid var(--accent-line, var(--line)); border-radius: 14px;
+  border: 1px solid var(--accent-line, var(--line));
+  border-radius: var(--radius-pill);
   background: var(--panel-2); color: var(--text);
   font: 12.5px/1 var(--mono); cursor: pointer;
 }
@@ -1095,7 +1119,7 @@ details.picker > summary:hover .picker-verb { text-decoration: underline; }
 
 .thread-list { display: flex; flex-direction: column; gap: 2px; }
 .thread {
-  display: block; padding: 8px 10px; border-radius: 7px; min-height: 34px;
+  display: block; padding: 8px 10px; border-radius: var(--radius-box); min-height: 34px;
   color: var(--text); text-decoration: none;
 }
 .thread:hover { background: var(--panel-2); }
@@ -1104,7 +1128,7 @@ details.picker > summary:hover .picker-verb { text-decoration: underline; }
   display: block; font-size: 13.5px; line-height: 1.35;
   overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
 }
-.thread-when { display: block; font-size: 11.5px; color: var(--muted); margin-top: 1px; }
+.thread-when { display: block; font-size: 12px; color: var(--muted); margin-top: 1px; }
 .side-empty { padding: 4px 8px; }
 .side-others { margin-top: auto; padding-top: 10px; border-top: 1px solid var(--line); }
 .side-others > p { padding: 0 8px 4px; }
@@ -1146,7 +1170,7 @@ details.picker > summary:hover .picker-verb { text-decoration: underline; }
 /* Prose wants a readable measure. At 90% of a wide window a reply became
    120-character lines, which is well past comfortable. */
 .bubble {
-  padding: 10px 13px; border-radius: 12px; max-width: min(64ch, 100%);
+  padding: 10px 13px; border-radius: var(--radius-lg); max-width: min(64ch, 100%);
   white-space: pre-wrap; overflow-wrap: anywhere; line-height: 1.55;
 }
 /* The reply is what somebody came to read, so it is the more solid of the two.
@@ -1184,11 +1208,11 @@ details.picker > summary:hover .picker-verb { text-decoration: underline; }
 .bubble ul, .bubble ol { margin: 0 0 8px; padding-left: 20px; }
 .bubble li { margin: 2px 0; }
 .bubble code {
-  font-family: var(--mono); font-size: .9em; padding: 1px 4px; border-radius: 4px;
+  font-family: var(--mono); font-size: .9em; padding: 1px 4px; border-radius: var(--radius);
   background: var(--panel-2);
 }
 .bubble pre {
-  margin: 0 0 8px; padding: 9px 11px; border-radius: 8px; overflow-x: auto;
+  margin: 0 0 8px; padding: 9px 11px; border-radius: var(--radius-box); overflow-x: auto;
   background: var(--panel-2); white-space: pre;
 }
 .bubble pre code { background: none; padding: 0; }
@@ -1209,17 +1233,21 @@ details.picker > summary:hover .picker-verb { text-decoration: underline; }
 
 /* ------------------------------------------------------------- what it did */
 
-.steps { display: flex; flex-direction: column; gap: 4px; padding: 2px 4px; }
-.step {
+/* Scoped to the conversation. Unscoped, `.step` and `.steps` collided with the
+   wizard's own — `.wizard .step` is a fieldset, and a rule turning it into a
+   flex row laid every label, input and hint out side by side, squashing the
+   New tool form's inputs to 45px. It is the first form anybody meets. */
+.chat-log .steps { display: flex; flex-direction: column; gap: 4px; padding: 2px 4px; }
+.chat-log .step {
   display: flex; align-items: center; gap: 8px;
   font-size: 12.5px; color: var(--muted);
 }
-.step-dot {
+.chat-log .step-dot {
   width: 7px; height: 7px; border-radius: 50%; flex: 0 0 auto;
   background: var(--muted);
 }
-.step.running .step-dot { animation: step-pulse 1.1s ease-in-out infinite; }
-.step.done .step-dot { background: var(--ok); animation: none; }
+.chat-log .step.running .step-dot { animation: step-pulse 1.1s ease-in-out infinite; }
+.chat-log .step.done .step-dot { background: var(--ok); animation: none; }
 @keyframes step-pulse { 50% { opacity: .25; } }
 
 /* ------------------------------------------------------------- the empty box */
@@ -1241,12 +1269,13 @@ details.picker > summary:hover .picker-verb { text-decoration: underline; }
 }
 .chat-form textarea {
   flex: 1 1 auto; min-width: 0; resize: none; overflow-y: auto;
-  font: inherit; line-height: 1.5; max-height: 180px;
+  font-family: inherit; font-size: var(--field-font);
+  line-height: 1.5; max-height: 180px;
 }
 .chat-foot { padding: 0 0 12px; text-align: right; }
 
 @media (prefers-reduced-motion: reduce) {
-  .bubble.streaming::after, .step.running .step-dot { animation: none; }
+  .bubble.streaming::after, .chat-log .step.running .step-dot { animation: none; }
 }
 
 /* ------------------------------------------------------------------ phone */
@@ -1290,42 +1319,42 @@ details.picker > summary:hover .picker-verb { text-decoration: underline; }
   display: flex; flex-direction: column; gap: 14px;
 }
 
-.ask {
-  border: 1px solid var(--line); border-radius: 10px; background: var(--panel);
-  padding: 16px 18px;
+.decide {
+  border: 1px solid var(--line); border-radius: var(--radius-box);
+  background: var(--panel); padding: var(--s4);
 }
 /* The thing that is waiting is the headline, not the assistant that asked. */
-.ask-head { display: flex; align-items: baseline; gap: 12px; flex-wrap: wrap; }
-.ask-head h2 { margin: 0; font-size: 17px; }
-.ask-why { margin: 8px 0 0; }
+.decide-head { display: flex; align-items: baseline; gap: 12px; flex-wrap: wrap; }
+.decide-head h2 { margin: 0; font-size: 17px; }
+.decide-why { margin: 8px 0 0; }
 
-.ask-args {
+.decide-args {
   margin: 12px 0 0; display: grid; gap: 1px;
-  border: 1px solid var(--line); border-radius: 8px; overflow: hidden;
+  border: 1px solid var(--line); border-radius: var(--radius-box); overflow: hidden;
   background: var(--line);
 }
-.ask-args > div {
+.decide-args > div {
   display: grid; grid-template-columns: 11rem 1fr; gap: 12px;
   padding: 8px 11px; background: var(--panel-2);
 }
-.ask-args dt { color: var(--muted); font-size: 13px; }
-.ask-args dd { margin: 0; overflow-wrap: anywhere; }
+.decide-args dt { color: var(--muted); font-size: 13px; }
+.decide-args dd { margin: 0; overflow-wrap: anywhere; }
 
-.ask-actions {
+.decide-actions {
   display: flex; gap: 9px; align-items: center; margin-top: 14px;
   flex-wrap: wrap;
 }
-.ask-actions input { flex: 1 1 14rem; min-width: 0; }
+.decide-actions input { flex: 1 1 14rem; min-width: 0; }
 /* The two decisions stay together whatever the width — Approve dropping to a
    line of its own reads as a different, more serious control than Refuse. */
-.ask-buttons { display: flex; gap: 9px; flex: 0 0 auto; }
+.decide-buttons { display: flex; gap: 9px; flex: 0 0 auto; }
 
 .inbox-empty { text-align: center; padding: 60px 0; }
 .inbox-empty h1 { font-size: 20px; margin: 0 0 6px; }
 
 @media (max-width: 640px) {
-  .ask-args > div { grid-template-columns: 1fr; gap: 2px; }
-  .ask-actions input { flex: 1 1 100%; }
+  .decide-args > div { grid-template-columns: 1fr; gap: 2px; }
+  .decide-actions input { flex: 1 1 100%; }
 }
 
 /* "Not right" sits beside Copy, quiet until the turn is hovered — the same
@@ -1351,7 +1380,7 @@ details.picker > summary:hover .picker-verb { text-decoration: underline; }
 .bar-col { flex: 1 1 0; height: 100%; display: flex; align-items: flex-end;
            min-width: 3px; }
 .bar {
-  width: 100%; background: var(--accent); border-radius: 2px 2px 0 0;
+  width: 100%; background: var(--accent); border-radius: var(--radius) var(--radius) 0 0;
   min-height: 1px;
 }
 .bars-foot { display: flex; justify-content: space-between; padding-top: 6px; }
@@ -1360,7 +1389,7 @@ details.picker > summary:hover .picker-verb { text-decoration: underline; }
    by having the action refused is finding out too late. */
 td.cap-cell { width: 130px; min-width: 130px; }
 .cap-bar {
-  display: block; height: 7px; border-radius: 4px; background: var(--panel-2);
+  display: block; height: 7px; border-radius: var(--radius); background: var(--panel-2);
   overflow: hidden;
 }
 .cap-fill { display: block; height: 100%; background: var(--ok); }
@@ -1370,8 +1399,9 @@ td.cap-cell { width: 130px; min-width: 130px; }
    because nothing had ever needed to lead with a number. */
 .stat-row { display: flex; flex-wrap: wrap; gap: 12px; margin: 0 0 16px; }
 .stat {
-  flex: 1 1 10rem; padding: 12px 14px; border: 1px solid var(--line);
-  border-radius: 9px; background: var(--panel);
+  flex: 1 1 10rem; padding: var(--s3) var(--s4);
+  border: 1px solid var(--line); border-radius: var(--radius-box);
+  background: var(--panel);
 }
 .stat-n { display: block; font-size: 22px; font-weight: 600; letter-spacing: -.01em; }
 .stat-l { display: block; font-size: 12.5px; color: var(--muted); margin-top: 2px; }

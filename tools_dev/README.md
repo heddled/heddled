@@ -9,6 +9,7 @@ design work is verified rather than assumed.
     python tools_dev/ui_audit.py     # contrast, hit targets, overflow
     python tools_dev/md_check.py     # the chat renderer, and what escapes it
     python tools_dev/css_audit.py    # classes templates ask for vs rules that exist
+    python tools_dev/form_audit.py   # do the forms and boxes agree on their own sizes
     python tools_dev/ui_shots.py out # every screen, light and dark
 
 `ui_audit.py` also checks the habits a screen is judged by even when nothing

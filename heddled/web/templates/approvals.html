@@ -42,26 +42,26 @@
   {% endif %}
 
   {% for a in waiting %}
-  <section class="ask">
-    <div class="ask-head">
+  <section class="decide">
+    <div class="decide-head">
       <h2>{{ a.what }}</h2>
       <span class="muted small">{{ a.agent }} · waiting {{ a.requested_at | ago }}</span>
     </div>
 
-    {% if a.reason %}<p class="ask-why">{{ a.reason }}</p>{% endif %}
+    {% if a.reason %}<p class="decide-why">{{ a.reason }}</p>{% endif %}
 
     {% if a.args %}
-    <dl class="ask-args">
+    <dl class="decide-args">
       {% for key, value in a.args.items() %}
       <div><dt>{{ key.replace('_', ' ') }}</dt><dd>{{ value }}</dd></div>
       {% endfor %}
     </dl>
     {% endif %}
 
-    <form method="post" action="/approvals/{{ a.id }}" class="ask-actions">
+    <form method="post" action="/approvals/{{ a.id }}" class="decide-actions">
       <input name="note" placeholder="A note, if you want one on the record"
              aria-label="A note about this decision" autocomplete="off">
-      <span class="ask-buttons">
+      <span class="decide-buttons">
       {#- No confirmation dialog. This screen *is* the confirmation — the turn
           is already stopped and waiting on it — and a second "are you sure" on
           top of that is friction for somebody working a queue. -#}
