@@ -201,10 +201,19 @@ function busy(on) {
 
 const humanName = t => String(t || '').replace(/_/g, ' ');
 
+// Every message event that has been put on screen, by sequence number. The
+// server resumes rather than replays, and the browser resumes again by itself
+// after a dropped connection — but a stream is a thing that can deliver
+// something twice, and a duplicated reply is the one mistake this page cannot
+// hide. Cheap insurance.
+const shown = new Set();
+
 function connect(sid) {
   if (stream) stream.close();
+  const after = Number(window.CHAT_AFTER) || 0;
   stream = new EventSource(
-    `/chat/${encodeURIComponent(AGENT)}/stream/${encodeURIComponent(sid)}`);
+    `/chat/${encodeURIComponent(AGENT)}/stream/${encodeURIComponent(sid)}`
+    + `?after=${after}`);
 
   stream.addEventListener('tool.called', (e) => {
     const payload = JSON.parse(e.data).payload || {};
@@ -232,7 +241,12 @@ function connect(sid) {
   // cannot leave a half-sentence on screen — and markdown is rendered once
   // here rather than on every token.
   stream.addEventListener('message.sent', (e) => {
-    const text = (JSON.parse(e.data).payload || {}).text || '';
+    const data = JSON.parse(e.data);
+    if (data.seq != null) {
+      if (shown.has(data.seq)) return;
+      shown.add(data.seq);
+    }
+    const text = (data.payload || {}).text || '';
     clearSteps();
     const el = live || bubble('agent', '');
     el.classList.remove('streaming');

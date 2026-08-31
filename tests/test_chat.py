@@ -262,3 +262,78 @@ class TestThePageItself:
         body = client.get("/chat/support").get_data(as_text=True)
         # The one you are on is not offered as somewhere else to go.
         assert body.count('href="/chat/support"') <= 1
+
+
+class TestTheStreamDoesNotRepeatItself:
+    """Reopening a conversation used to show every reply twice.
+
+    The page renders the history, then the live stream replayed the same events
+    from the beginning and the page appended them again — so a reply arrived
+    once from the server and once from the stream, the second copy stamped with
+    the time the page was opened rather than the time it was said. Reconnects
+    made it worse: the browser reopens a dropped EventSource by itself, and
+    each one added the whole conversation again.
+    """
+
+    def test_the_page_says_where_the_stream_should_start(
+            self, client, project, registry, worker):
+        _open_chat(project, registry)
+        result = _seed()
+        body = client.get(
+            f"/chat/support?session={result['session_id']}").get_data(as_text=True)
+        assert "CHAT_AFTER" in body
+        # Not zero: something has already happened here, and zero is the
+        # instruction that caused the duplication in the first place.
+        assert int(body.split("CHAT_AFTER = ")[1].split(";")[0]) > 0
+
+    def test_from_the_beginning_the_stream_does_carry_the_reply(
+            self, client, project, registry, worker, store):
+        """The half that proves the next test is not passing on an empty
+        stream. Exactly the replay is read — going further would block on the
+        keepalive of a connection designed to stay open for hours."""
+        _open_chat(project, registry)
+        sid = _seed()["session_id"]
+        count = len(store.events_for_session(sid))
+        body = _read_stream(client, f"/chat/support/stream/{sid}?after=0", count)
+        assert "message.sent" in body
+
+    def test_resumed_past_the_history_there_is_nothing_to_replay(
+            self, client, project, registry, worker, store):
+        """The replay is `events_for_session(after_seq=…)`, so with the page's
+        own resume point it is empty and nothing can be rendered twice.
+
+        End to end this is verified in a browser — send a message, reload three
+        times, count the bubbles — which a test client cannot do because it
+        does not run the page."""
+        _open_chat(project, registry)
+        sid = _seed()["session_id"]
+        last = max(ev.seq for ev in store.events_for_session(sid))
+        assert store.events_for_session(sid, after_seq=last) == []
+
+    def test_a_resume_point_is_taken_from_the_page_or_the_browser(
+            self, client, project, registry, worker):
+        """`after` on a first connect, Last-Event-ID when the browser
+        reconnects on its own. Neither may 500, and nonsense must not either."""
+        _open_chat(project, registry)
+        sid = _seed()["session_id"]
+        for headers, query in (({}, "?after=999999"),
+                               ({"Last-Event-ID": "999999"}, ""),
+                               ({"Last-Event-ID": "bananas"}, ""),
+                               ({}, "?after=not-a-number")):
+            r = client.get(f"/chat/support/stream/{sid}{query}",
+                           headers={"Accept": "text/event-stream", **headers})
+            assert r.status_code == 200
+            r.close()
+
+
+def _read_stream(client, path, chunks, headers=None):
+    """The opening of an SSE response, without waiting for it to end."""
+    r = client.get(path, headers={"Accept": "text/event-stream", **(headers or {})})
+    assert r.status_code == 200
+    body = ""
+    for i, chunk in enumerate(r.response):
+        body += chunk.decode("utf-8", "replace")
+        if i + 1 >= chunks:
+            break
+    r.close()
+    return body

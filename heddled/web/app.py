@@ -1740,14 +1740,14 @@ def register_api(app: Flask) -> None:
         agent = _chat_agent_or_404(name)
         who = (getattr(g, "user", None) or {}).get("username")
         sid = request.args.get("session")
-        history = []
+        history, last_seq = [], 0
         if sid:
             session = get_store().get_session(sid)
             # Somebody else's conversation is not yours to open, whatever your
             # role is on the console. The chat surface shows your threads only.
             if not session or not _mine(session, who, agent.name):
                 abort(404)
-            history = _chat_history(sid)
+            history, last_seq = _chat_history(sid)
 
         # The engine writes a title when a turn ends, so anything still running
         # — or that failed before it finished — has none. "Untitled" tells the
@@ -1759,7 +1759,8 @@ def register_api(app: Flask) -> None:
             title = s["title"]
             if not title and unresolved < 5:
                 unresolved += 1
-                first = next((m["text"] for m in _chat_history(s["id"])
+                earlier, _ = _chat_history(s["id"])
+                first = next((m["text"] for m in earlier
                               if m["role"] == "you"), "")
                 title = (first[:60] + "…") if len(first) > 60 else first
             threads.append({"id": s["id"], "title": title or "New conversation",
@@ -1769,6 +1770,7 @@ def register_api(app: Flask) -> None:
         others = [a for a in _chat_agents() if a.name != agent.name]
         return render_template(
             "chat.html", agent=agent, session_id=sid, history=history,
+            last_seq=last_seq,
             threads=threads, others=others, who=who,
             # Suggested first messages, from the agent's own tools — the same
             # helper the Test tab uses, because an empty box tells somebody who
@@ -1776,21 +1778,25 @@ def register_api(app: Flask) -> None:
             openers=story.openers(agent, get_registry().agent_tools(agent)),
         )
 
-    def _chat_history(sid: str) -> list[dict]:
-        """The conversation as the person had it — the two message events only.
+    def _chat_history(sid: str) -> tuple[list[dict], int]:
+        """The conversation as the person had it, and the sequence number it
+        ends at.
 
-        Deliberately not the trace: what the agent looked up and what it decided
-        belong to whoever operates it, and this page is not that.
+        Only the two message events: what the agent looked up and what it
+        decided belong to whoever operates it, and this page is not that. The
+        sequence number is what stops the live stream replaying what is already
+        on the page.
         """
-        out = []
+        out, last = [], 0
         for ev in get_store().events_for_session(sid):
+            last = max(last, ev.seq or 0)
             if ev.type == "message.received":
                 out.append({"role": "you", "text": ev.payload.get("text") or "",
                             "at": ev.ts})
             elif ev.type == "message.sent":
                 out.append({"role": "agent", "text": ev.payload.get("text") or "",
                             "at": ev.ts})
-        return out
+        return out, last
 
     def _mine(session, who: str, agent_name: str = None) -> bool:
         if session["channel"] != "chat":
@@ -1843,7 +1849,15 @@ def register_api(app: Flask) -> None:
         if not session or not _mine(session, who, name):
             abort(404)
         watcher_id = (getattr(g, "user", None) or {}).get("id")
-        after = int(request.args.get("after", 0))
+        # Where to resume. The page already shows everything up to `after`, and
+        # EventSource sends Last-Event-ID when it reconnects by itself — without
+        # honouring one or the other, every reconnect appends the whole
+        # conversation again underneath the copy already on screen.
+        resume = request.headers.get("Last-Event-ID") or request.args.get("after", 0)
+        try:
+            after = int(resume)
+        except (TypeError, ValueError):
+            after = 0
 
         def generate():
             q: queue.Queue = queue.Queue(maxsize=1000)
