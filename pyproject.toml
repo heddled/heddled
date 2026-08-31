@@ -37,7 +37,19 @@ dependencies = [
 ]
 
 [project.optional-dependencies]
-dev = ["pytest>=7.4"]
+# Reading PDFs. Everything else about documents is stdlib.
+pdf = ["pypdf>=4.0"]
+dev = [
+    "pytest>=7.4",
+    # Not runtime dependencies and deliberately not: heddled/documents.py
+    # writes .docx, .xlsx and .pptx with zipfile and the stdlib XML
+    # parser. These are here so the suite can hand what it produced to
+    # somebody else's implementation — a package that unzips and parses
+    # is not necessarily one Word will open.
+    "python-docx>=1.1",
+    "openpyxl>=3.1",
+    "python-pptx>=0.6",
+]
 
 [project.scripts]
 heddled = "heddled.cli:main"

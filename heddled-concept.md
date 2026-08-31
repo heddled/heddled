@@ -301,9 +301,24 @@ them would get it wrong. Written once, tested once — most of
 `tests/test_workspace.py` is attempts to escape — and every agent with a
 workspace inherits it.
 
-Text only, and deliberately: a PDF reaching a model as replacement characters
-wastes a turn and reads as a bug, so it is refused with a sentence saying what
-the tools do take. No delete — overwriting is recoverable and deleting is not.
+**Documents, because "write a report" means a .docx.** A model emits text, so
+an assistant writes Markdown and the extension decides what is made: `.docx`,
+`.xlsx` and `.pptx` become real files, with headings as headings and numbers as
+numbers. Reading works the other way — Word and Excel are unzipped and their
+text pulled out.
+
+None of that adds a dependency. All three formats are zip archives of XML, and
+`zipfile` with the stdlib parser makes them; python-docx and python-pptx would
+have pulled lxml, and python-pptx Pillow as well, which is a poor trade for a
+platform whose five third-party packages each carry a comment justifying
+themselves. The tests hand what is produced to those libraries anyway, as a
+dev-only check — a package that unzips and parses is not necessarily one Word
+will open.
+
+PDF is the exception and stays optional, because extracting text from one
+genuinely needs a library. What can be read is computed from what is installed
+rather than declared, so a file list never marks something readable that the
+read would refuse. No delete — overwriting is recoverable and deleting is not.
 
 What this is **not** is a sandbox. Handlers run in this process, so a Python
 tool written by hand can still read whatever the process can; this makes the

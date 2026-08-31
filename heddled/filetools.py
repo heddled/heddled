@@ -26,7 +26,9 @@ OPERATIONS = {
         {"type": "object", "properties": {}},
     ),
     "read_file": (
-        "Read one text file from the workspace and return its contents.",
+        "Read one file from the workspace and return its text. Handles plain "
+        "text, CSV, JSON and Markdown, and pulls the words out of Word, Excel "
+        "and PDF files.",
         {
             "type": "object",
             "properties": {
@@ -37,14 +39,20 @@ OPERATIONS = {
         },
     ),
     "write_file": (
-        "Write a text file into the workspace, replacing it if it is already "
-        "there. Returns the name written.",
+        "Write a file into the workspace, replacing it if it is already there. "
+        "Name it .docx, .xlsx or .pptx and a real Word document, spreadsheet or "
+        "slide deck is made from the Markdown you give — headings, lists and "
+        "tables become the document's own. Any other name is written as text.",
         {
             "type": "object",
             "properties": {
                 "path": {"type": "string",
-                         "description": "What to call it, inside the workspace."},
-                "content": {"type": "string", "description": "The whole file."},
+                         "description": "What to call it, inside the workspace. "
+                                        "The extension decides what is made."},
+                "content": {"type": "string",
+                            "description": "The whole file. For .docx and .pptx, "
+                                           "Markdown; for .xlsx, a Markdown table "
+                                           "or CSV; otherwise the text itself."},
             },
             "required": ["path", "content"],
         },

@@ -33,7 +33,8 @@ There is a built-in stand-in model, so you can build an assistant, watch it work
 - **Limits that hold.** Spending caps per day and per conversation, rate limits, and sensitive values kept out of the record.
 - **A record of everything.** What was asked, what it looked up, what came back, what it decided — readable months later, not a log to grep.
 - **It starts itself.** On a schedule, when a file lands, or when email arrives.
-- **It reaches your systems.** HTTP, lookups, email, webhooks and MCP servers, mostly without writing code — and a folder of its own to read and write files in.
+- **It reaches your systems.** HTTP, lookups, email, webhooks and MCP servers, mostly without writing code.
+- **It works with real files.** A folder of its own, where it reads Word and Excel documents and writes `.docx`, `.xlsx` and `.pptx` — not a `.txt` somebody has to reformat.
 - **It stays yours.** One container on your hardware, any model provider or your own, and every definition a plain file you can read.
 
 ## Documentation

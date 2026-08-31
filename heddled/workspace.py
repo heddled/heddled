@@ -24,7 +24,7 @@ from __future__ import annotations
 from pathlib import Path
 from typing import Optional
 
-from . import config
+from . import config, documents
 
 #: Read and write caps. A model that asks for a 200MB file has misunderstood
 #: the task, and the answer should be a clear refusal rather than an outage.
@@ -119,13 +119,14 @@ def safe_path(root: Path, given: str, *, must_exist: bool = False) -> Path:
 
 
 def looks_like_text(path: Path) -> bool:
-    """Whether the built-in read tool could open this.
+    """Whether the agent could open this at all — as text or as a document.
 
-    The console lists and downloads anything; an agent reads text. Marking the
-    difference in the listing closes a loop that would otherwise be discovered
-    by an operator dropping in a PDF and wondering why the agent says it cannot
-    read it.
+    The console lists and downloads anything. Marking what the agent can
+    actually read closes a loop that would otherwise be discovered by an
+    operator dropping in a file and wondering why it says it cannot read it.
     """
+    if path.suffix.lower() in documents.readable_suffixes():
+        return True
     try:
         with path.open("rb") as fh:
             return b"\0" not in fh.read(8000)
@@ -168,17 +169,47 @@ def read(root: Path, given: str) -> str:
     if size > MAX_READ_BYTES:
         raise WorkspaceError(
             f"'{given}' is {size // 1024}KB, over the {MAX_READ_BYTES // 1024}KB limit")
+
+    # A document is not text, but the text is in there. Extracted rather than
+    # refused: the agent asked to read a file and does not need to know which
+    # kind of zip archive it turned out to be.
+    if path.suffix.lower() in documents.readable_suffixes():
+        try:
+            return documents.extract(path)
+        except documents.DocumentError as exc:
+            raise WorkspaceError(str(exc))
+        except Exception as exc:
+            raise WorkspaceError(f"'{given}' could not be opened: {exc}")
+
     data = path.read_bytes()
-    # Text only, on purpose. A PDF or a spreadsheet reaching a model as mojibake
-    # wastes a turn and reads as a bug; saying so is more use than trying.
     if b"\0" in data[:8000]:
         raise WorkspaceError(
-            f"'{given}' is not a text file. This can read text, CSV, JSON and "
-            "Markdown; a PDF or a spreadsheet needs converting first.")
+            f"'{given}' is not something this can read. It handles text, CSV, "
+            "JSON and Markdown, and Word, Excel and PDF files.")
     return data.decode("utf-8", errors="replace")
 
 
-def write(root: Path, given: str, content: str) -> dict:
+def write(root: Path, given: str, content) -> dict:
+    # A model cannot emit a .docx, so it writes markdown and this makes the
+    # file. Chosen by extension: an assistant asked for a report gets one,
+    # without a second tool to know about.
+    suffix = Path(str(given or "")).suffix.lower()
+    if suffix in documents.WRITABLE:
+        try:
+            encoded = documents.build(suffix, content)
+        except documents.DocumentError as exc:
+            raise WorkspaceError(str(exc))
+        if len(encoded) > MAX_WRITE_BYTES:
+            raise WorkspaceError(
+                f"that would be {len(encoded) // 1024}KB, over the "
+                f"{MAX_WRITE_BYTES // 1024}KB limit for one file")
+        path = safe_path(root, given)
+        path.parent.mkdir(parents=True, exist_ok=True)
+        existed = path.is_file()
+        path.write_bytes(encoded)
+        return {"path": str(path.relative_to(root)), "bytes": len(encoded),
+                "replaced": existed}
+
     text = "" if content is None else str(content)
     encoded = text.encode("utf-8")
     if len(encoded) > MAX_WRITE_BYTES:

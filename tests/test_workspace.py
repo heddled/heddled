@@ -147,12 +147,12 @@ class TestReadingAndWriting:
         with pytest.raises(WorkspaceError, match="over the"):
             workspace.write(root, "big.txt", "x" * (workspace.MAX_WRITE_BYTES + 1))
 
-    def test_a_binary_file_says_so_rather_than_returning_mojibake(self, root):
-        """A PDF reaching a model as replacement characters wastes a turn and
-        reads as a bug. Saying what it takes is more use than trying."""
-        (root / "invoice.pdf").write_bytes(b"%PDF-1.4\x00\x00binary")
-        with pytest.raises(WorkspaceError, match="not a text file"):
-            workspace.read(root, "invoice.pdf")
+    def test_something_it_cannot_read_says_so_rather_than_mojibake(self, root):
+        """Bytes reaching a model as replacement characters waste a turn and
+        read as a bug. Saying what it does take is more use than trying."""
+        (root / "photo.jpg").write_bytes(b"\xff\xd8\xff\xe0\x00\x10JFIF\x00")
+        with pytest.raises(WorkspaceError, match="not something this can read"):
+            workspace.read(root, "photo.jpg")
 
     def test_listing_shows_files_with_their_sizes(self, root):
         workspace.write(root, "a.txt", "one")
@@ -299,12 +299,19 @@ class TestTheWorkspacePanel:
         assert "Its files" in body and "invoices.csv" in body
 
     def test_a_file_the_agent_cannot_read_says_so(self, client, project, registry):
-        """Otherwise an operator drops in a PDF and is left wondering why the
+        """Otherwise an operator drops a file in and is left wondering why the
         agent says it cannot read it."""
         root = _with_workspace(project, registry)
-        (root / "invoice.pdf").write_bytes(b"%PDF-1.4\x00binary")
+        (root / "photo.jpg").write_bytes(b"\xff\xd8\xff\xe0\x00\x10JFIF\x00")
         body = client.get("/agents/support").get_data(as_text=True)
         assert "not text" in body
+
+    def test_a_document_is_not_marked_unreadable(self, client, project, registry):
+        root = _with_workspace(project, registry)
+        workspace.write(root, "report.docx", "# Report\n")
+        body = client.get("/agents/support").get_data(as_text=True)
+        assert "report.docx" in body
+        assert body.count("not text") == 0
 
     def test_a_broken_workspace_does_not_take_the_page_down(
             self, client, project, registry):
@@ -409,3 +416,56 @@ class TestUploadingAndDeleting:
         assert viewer.post("/agents/support/files",
                            data={"action": "delete", "path": "there.txt"}).status_code == 403
         assert (root / "there.txt").exists()
+
+
+class TestDocumentsInTheWorkspace:
+    """A model cannot emit a .docx, so it writes markdown and the extension
+    decides what is made. No second tool for the agent to know about."""
+
+    def test_the_extension_decides_what_is_written(self, root):
+        for name in ("report.docx", "rows.xlsx", "deck.pptx"):
+            result = workspace.write(root, name, "# Title\n\n| a | b |\n| - | - |\n| 1 | 2 |\n")
+            assert result["bytes"] > 0
+            assert (root / name).read_bytes()[:2] == b"PK", f"{name} is not a package"
+
+    def test_anything_else_is_still_written_as_text(self, root):
+        workspace.write(root, "notes.md", "# Title\n")
+        assert (root / "notes.md").read_text() == "# Title\n"
+
+    def test_a_document_written_here_can_be_read_back(self, root):
+        workspace.write(root, "r.docx", "# Heading\n\nSome words.\n")
+        text = workspace.read(root, "r.docx")
+        assert "Heading" in text and "Some words." in text
+
+    def test_a_spreadsheet_comes_back_as_rows(self, root):
+        workspace.write(root, "r.xlsx", "a,b\n1,2\n")
+        assert workspace.read(root, "r.xlsx").splitlines()[0] == "a,b"
+
+    def test_a_document_still_cannot_be_written_outside(self, root):
+        with pytest.raises(WorkspaceError, match="outside"):
+            workspace.write(root, "../escaped.docx", "# no")
+
+    def test_a_file_that_is_neither_text_nor_a_document_is_refused(self, root):
+        (root / "blob.bin").write_bytes(b"\x00\x01\x02")
+        with pytest.raises(WorkspaceError, match="not something this can read"):
+            workspace.read(root, "blob.bin")
+
+    def test_the_listing_marks_documents_as_readable(self, root):
+        workspace.write(root, "r.docx", "# Hello\n")
+        (root / "blob.bin").write_bytes(b"\x00\x01")
+        by_name = {f["path"]: f["readable"] for f in workspace.listing(root)}
+        assert by_name["r.docx"] is True
+        assert by_name["blob.bin"] is False
+
+    def test_the_tool_writes_one_end_to_end(self, registry, project):
+        path = project / "agents" / "support.yaml"
+        data = yamlio.load(path.read_text())
+        data["workspace"] = True
+        path.write_text(yamlio.dump(data))
+
+        handler = filetools.make_workspace_handler("write_file", "support")
+        result = handler({"path": "out/summary.docx",
+                          "content": "# Summary\n\nAll clear.\n"}, _Ctx())
+        made = project / "work" / "support" / "out" / "summary.docx"
+        assert made.is_file() and made.read_bytes()[:2] == b"PK"
+        assert result["path"].endswith("summary.docx")

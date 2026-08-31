@@ -503,10 +503,12 @@
     <input type="file" name="file" required aria-label="A file to add to the workspace">
     <button class="btn" type="submit">Add file</button>
   </form>
-  <p class="hint">The agent reads text — plain text, CSV, JSON, Markdown. It can
-    read and write anything inside this folder and nothing outside it. Put a rule
-    on <code>write_file</code> above if you want to approve changes before they
-    are written.</p>
+  <p class="hint">The agent reads plain text, CSV, JSON and Markdown, and pulls
+    the words out of Word and Excel files. It writes those too — ask it for a
+    <code>.docx</code>, <code>.xlsx</code> or <code>.pptx</code> and it makes a
+    real one. It can reach anything inside this folder and nothing outside it.
+    Put a rule on <code>write_file</code> above if you want to approve changes
+    before they are written.</p>
   {% endif %}
 </section>
 {% endif %}
