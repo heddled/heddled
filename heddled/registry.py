@@ -144,6 +144,10 @@ class Tool:
             from .mcp_client import make_mcp_tool_handler
 
             return make_mcp_tool_handler(self.raw)
+        if self.source == "workspace":
+            from .filetools import make_workspace_handler
+
+            return make_workspace_handler(self.raw["operation"], self.raw["agent"])
         if self.is_no_code:
             # Built from a form rather than written. The engine cannot tell.
             from . import tooltypes
@@ -190,6 +194,7 @@ class Agent:
     policies: list[dict] = field(default_factory=list)
     memory: dict = field(default_factory=dict)
     expose: dict = field(default_factory=dict)
+    workspace: Any = None
     description: str = ""
     handler: Optional[str] = None  # Level 3: dotted path to a custom turn engine
     #: The definition this agent was built from. Set for every agent, so one
@@ -263,6 +268,7 @@ def build_agent(raw_text: str, instructions: str, path: Path = None,
         policies=list(raw.get("policies") or []),
         memory=raw.get("memory") or {},
         expose=raw.get("expose") or {},
+        workspace=raw.get("workspace"),
         description=raw.get("description", ""),
         handler=raw.get("handler"),
         source=raw_text,
@@ -416,6 +422,13 @@ class Registry:
             t = all_tools.get(ref)
             if t:
                 resolved[t.name] = t
+
+        # A workspace and the tools that reach it are one choice, not four: an
+        # agent given a folder to work in gets the three ways of working in it,
+        # and an agent without one has no file tools to mount by mistake.
+        from . import filetools
+
+        resolved.update(filetools.tools_for(agent))
         return resolved
 
     def _mcp_tools(self, ref: dict) -> list[Tool]:

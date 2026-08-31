@@ -586,6 +586,17 @@ def register_console(app: Flask) -> None:
 
         if "memory_session" in form:
             updates["memory"] = {"session": form["memory_session"]}
+        if "workspace_present" in form:
+            # A checkbox writes `true`, which means work/<agent>. Somebody who
+            # wants it pointed at an existing folder writes a path on the raw
+            # tab, and ticking the box must not flatten that back to `true`.
+            wants = form.get("workspace") == "on"
+            current = get_registry().get_agent(name).raw.get("workspace")
+            if not wants:
+                updates["workspace"] = None
+            elif not current:
+                updates["workspace"] = True
+
         if "expose_present" in form:
             # An unticked checkbox submits nothing at all, so keying off the
             # checkbox itself meant a box could be ticked but never unticked —

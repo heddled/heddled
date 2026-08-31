@@ -514,6 +514,19 @@
             <input type="checkbox" name="expose_chat" {{ 'checked' if agent.expose.get('chat') }}>
             Let colleagues chat with it
           </label>
+          <input type="hidden" name="workspace_present" value="1">
+          <label class="check">
+            <input type="checkbox" name="workspace" {{ 'checked' if agent.workspace }}>
+            Let it work with files
+          </label>
+          <p class="hint">Gives it a folder — <code>work/{{ agent.name }}</code> unless
+            you name another on the raw tab — and three actions:
+            <code>list_files</code>, <code>read_file</code> and
+            <code>write_file</code>. It can reach nothing outside that folder, and
+            never <code>agents/</code>, <code>tools/</code> or <code>data/</code>,
+            whatever the file says. Text files only.
+            {% if agent.workspace %}Put a rule on <code>write_file</code> above if
+            you want to see changes before they are written.{% endif %}</p>
           <p class="hint">Gives it a page of its own at
             <code>/chat/{{ agent.name }}</code>. Anyone with an account here can
             open it and talk to this agent — they see their own conversations

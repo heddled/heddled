@@ -33,6 +33,11 @@ services:
     volumes:
       - ./agents:/app/agents
       - ./tools:/app/tools
+      # Where agents given a workspace do their file work. Bind-mounted rather
+      # than a volume so a file can be dropped in and the result picked up
+      # without `docker cp` — the same reasoning as agents/ and tools/. Both
+      # services get it: the worker runs the turns that touch it.
+      - ./work:/app/work
       - heddled-data:/app/data
       - heddled-var:/app/var
     restart: unless-stopped
@@ -57,6 +62,11 @@ services:
     volumes:
       - ./agents:/app/agents
       - ./tools:/app/tools
+      # Where agents given a workspace do their file work. Bind-mounted rather
+      # than a volume so a file can be dropped in and the result picked up
+      # without `docker cp` — the same reasoning as agents/ and tools/. Both
+      # services get it: the worker runs the turns that touch it.
+      - ./work:/app/work
       - heddled-data:/app/data
       - heddled-var:/app/var
     restart: unless-stopped

@@ -1,3 +1,7 @@
+# What agents with a workspace read and write. Yours, like agents/ and tools/,
+# but unlike them it is working material rather than definitions.
+work/
+
 # Runtime state — the event store, session state, job queue, cursors, and
 # whatever the adapters have written. All of it is created on first run and
 # belongs to the machine it is on, not to the project.

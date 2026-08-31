@@ -265,6 +265,58 @@ What this is not: a frontend to brand, theme, embed, or ship to customers. No
 logo upload, no CSS hooks, no widget snippet. Teams who want a customer-facing
 chat build it on the API, and that answer does not change.
 
+### A folder an agent may work in
+
+Some work is file work: a folder of exports to summarise, a report to write out
+for somebody to collect. An agent can be given a workspace — one directory —
+and three tools that reach it and nothing else.
+
+**Opted into per agent**, in the file: `workspace: true` for one of its own at
+`work/<name>`, or a path to somewhere that already exists. Off by default, so no
+install gains one on upgrade.
+
+**Where it points is the operator's choice. What it can reach is not.** None of
+the confinement is expressible in an agent file, and that asymmetry is the
+design. A path is resolved before it is used and must land inside the root, so a
+symlink out is refused rather than followed; `..` and absolute paths are refused
+on sight as well.
+
+**`agents/`, `tools/`, `data/` and the project root are refused
+unconditionally**, whatever the workspace says. This is the one rule that
+carries weight: agents are *files*, and an agent that can rewrite
+`agents/support.yaml` can delete the approval gate that constrains it. No policy
+fixes that, because the policy is the file — so it is closed before any policy
+is consulted.
+
+**Three tools, not one with a mode.** `list_files`, `read_file`, `write_file`.
+Policy has to be able to tell them apart: reading wants to be ungated so the
+agent gets on with the job, while writing wants `requires_approval` and no
+availability on the chat channel. A single tool with an `operation` argument
+would make that distinction inexpressible — the same reasoning that gives the
+chat surface its own channel name.
+
+**Built into the platform, not left to a handler.** If every operator wrote
+their own `read_file` they would each write their own path check, and one of
+them would get it wrong. Written once, tested once — most of
+`tests/test_workspace.py` is attempts to escape — and every agent with a
+workspace inherits it.
+
+Text only, and deliberately: a PDF reaching a model as replacement characters
+wastes a turn and reads as a bug, so it is refused with a sentence saying what
+the tools do take. No delete — overwriting is recoverable and deleting is not.
+
+What this is **not** is a sandbox. Handlers run in this process, so a Python
+tool written by hand can still read whatever the process can; this makes the
+*built-in* file tools safe and does not pretend to isolate the platform from
+itself. Nor is there a shell, or network access, or any way for one agent to
+reach another's workspace.
+
+One consequence to hold on to: an agent that reads untrusted files and also
+holds a consequential tool is a combination worth gating. Typed tools have been
+the ceiling on prompt injection — an email cannot make an agent do something it
+has no tool for — and a workspace does not remove that ceiling, but it does put
+attacker-controlled text in front of whatever else the agent can already do.
+
 ## 10. Trust layer
 
 Policies are declarative and attach to agents, tools, or environments: per-tool allow/deny per channel, approval gates, spend and token budgets per session/day, rate limits, and PII redaction rules applied at the trace-store boundary (operate on data, store the redacted form). Every approval, takeover, and policy denial is on the spine, so the audit log is not a feature — it's a query.

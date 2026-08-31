@@ -51,6 +51,7 @@ HEDDLED_WEB_ONLY=1 docker compose --profile split up   # worker as its own proce
 | **Approvals queue** | `/approvals` — a standalone page for whoever signs things off: what is waiting, what it wants to do, approve or refuse with a note. No console. |
 | **Reported replies** | "Not right" on a chat reply promotes that conversation to a golden trace, with the reporter's note in the spec. Tests get written by the person who saw the problem. |
 | **Spending** | `/spending` — the ledger read back: per day, per agent, per action, against the `max_eur_per_day` caps actually set. |
+| **Workspace** | `workspace: true` gives an agent one folder and `list_files` / `read_file` / `write_file`. Confinement is not configurable: paths resolve before use, symlinks out are refused, and `agents/`, `tools/`, `data/` are denied whatever the file says. Text only, no delete, no shell. |
 | **Chat surface** | `expose: { chat: true }` gives an agent a page at `/chat/<name>` for people who have an account but do not operate the place — their own conversations, none of the console. Replies stream token by token. |
 | **Multi-agent** | Mount an agent as a tool (`agent:billing`) with depth and cycle protection; expose an agent as an MCP server. |
 | **Models** | Anthropic, plus any OpenAI-compatible service with its own key and base URL — OpenAI, DeepSeek, Groq, Mistral, Together, OpenRouter, Ollama, vLLM. |
