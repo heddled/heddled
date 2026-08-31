@@ -28,6 +28,7 @@
         {% endif %}
         <input id="s_{{ key }}" name="setting_{{ key }}" class="mono"
                type="{{ 'password' if secretish(key) else 'text' }}"
+               {{ 'autocomplete=off' if secretish(key) }}
                value="{{ '' if secretish(key) else settings.get(key, '') }}"
                placeholder="{{ ('set — type to replace' if settings.get(key) else 'not set')
                                if secretish(key) else 'not set' }}">
@@ -101,7 +102,8 @@
   <form method="post" action="/settings/secrets" class="policy-form">
     <input name="name" placeholder="billing_api_key" pattern="[a-zA-Z_][a-zA-Z0-9_]*"
            required aria-label="Secret name">
-    <input name="value" type="password" placeholder="the value" required
+    <input name="value" type="password" autocomplete="off"
+           placeholder="the value" required
            aria-label="Secret value">
     <button class="btn" type="submit">Add secret</button>
   </form>

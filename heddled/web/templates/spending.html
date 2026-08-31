@@ -62,7 +62,10 @@
         <td>€{{ '%.2f' | format(c.today) }}</td>
         <td>€{{ '%.2f' | format(c.cap) }}</td>
         <td class="cap-cell">
-          <span class="cap-bar">
+          {#- role=img with a label, so what the bar means is readable rather
+              than inferred from its width and its colour. -#}
+          <span class="cap-bar" role="img"
+                aria-label="{{ (c.today / c.cap * 100) | round | int }}% of the daily cap used">
             <span class="cap-fill {{ 'hot' if c.today >= c.cap * 0.8 }}"
                   style="width: {{ [c.today / c.cap * 100, 100] | min | round(1) }}%"></span>
           </span>

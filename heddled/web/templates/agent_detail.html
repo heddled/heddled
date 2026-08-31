@@ -212,7 +212,8 @@
     <input name="mcp_name" placeholder="a short name" aria-label="Name for this system">
     <input name="mcp_url" class="mono" placeholder="https://example.com/mcp" required
            aria-label="MCP address">
-    <input name="mcp_token" type="password" placeholder="token, if it needs one"
+    <input name="mcp_token" type="password" autocomplete="off"
+             placeholder="token, if it needs one"
            aria-label="Access token">
     <button class="btn" type="submit">Connect</button>
   </form>
@@ -249,7 +250,8 @@
           {{ p['rate_limit'].get('per_seconds', 60) }}s</span>{% endif %}
       </td>
       <td>
-        <form method="post" action="/agents/{{ agent.name }}/policies" class="inline">
+        <form method="post" action="/agents/{{ agent.name }}/policies" class="inline"
+              data-confirm="Remove the rule for {{ p.get('tool', 'every action') }}? Whatever it required — approval, a spending cap, hiding sensitive values — stops applying from the next turn.">
           <input type="hidden" name="remove" value="{{ p.get('tool', '*') }}">
           <button class="btn tiny danger" type="submit">remove</button>
         </form>

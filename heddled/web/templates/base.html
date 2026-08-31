@@ -28,21 +28,30 @@
     <span>heddled</span>{% if dev_mode %} <span class="badge dev">dev</span>{% endif %}</a>
   {# Labels are written for whoever has to use this, not for the codebase.
      The URLs, files and API keep the platform's own vocabulary. #}
-  <a href="/" class="{{ 'on' if request.path == '/' or request.path.startswith('/agents') }}">Agents</a>
-  <a href="/sessions" class="{{ 'on' if request.path.startswith('/sessions') }}">Activity
+  <a href="/" class="{{ 'on' if request.path == '/' or request.path.startswith('/agents') }}"
+     {{ 'aria-current=page' if request.path == '/' or request.path.startswith('/agents') }}>Agents</a>
+  <a href="/sessions" class="{{ 'on' if request.path.startswith('/sessions') }}"
+     {{ 'aria-current=page' if request.path.startswith('/sessions') }}>Activity
     {% if pending_approvals %}<span class="badge warn" title="waiting for your approval">{{ pending_approvals }}</span>{% endif %}
   </a>
-  <a href="/tools" class="{{ 'on' if request.path.startswith('/tools') }}">Tools</a>
-  <a href="/evals" class="{{ 'on' if request.path.startswith('/evals') }}">Tests</a>
-  <a href="/deployments" class="{{ 'on' if request.path.startswith('/deployments') }}">Publish</a>
-  <a href="/spending" class="{{ 'on' if request.path.startswith('/spending') }}">Spending</a>
+  <a href="/tools" class="{{ 'on' if request.path.startswith('/tools') }}"
+     {{ 'aria-current=page' if request.path.startswith('/tools') }}>Tools</a>
+  <a href="/evals" class="{{ 'on' if request.path.startswith('/evals') }}"
+     {{ 'aria-current=page' if request.path.startswith('/evals') }}>Tests</a>
+  <a href="/deployments" class="{{ 'on' if request.path.startswith('/deployments') }}"
+     {{ 'aria-current=page' if request.path.startswith('/deployments') }}>Publish</a>
+  <a href="/spending" class="{{ 'on' if request.path.startswith('/spending') }}"
+     {{ 'aria-current=page' if request.path.startswith('/spending') }}>Spending</a>
   {% if g.user and g.user.role == 'admin' %}
-  <a href="/users" class="{{ 'on' if request.path.startswith('/users') }}">People</a>
-  <a href="/settings" class="{{ 'on' if request.path.startswith('/settings') }}">Settings</a>
+  <a href="/users" class="{{ 'on' if request.path.startswith('/users') }}"
+     {{ 'aria-current=page' if request.path.startswith('/users') }}>People</a>
+  <a href="/settings" class="{{ 'on' if request.path.startswith('/settings') }}"
+     {{ 'aria-current=page' if request.path.startswith('/settings') }}>Settings</a>
   {% endif %}
   <span class="spacer"></span>
   {% if g.user %}
-  <a href="/account" class="whoami" title="{{ g.user.role }}">{{ g.user.username }}</a>
+  <a href="/account" class="whoami" title="{{ g.user.role }}"
+     {{ 'aria-current=page' if request.path.startswith('/account') }}>{{ g.user.username }}</a>
   {% endif %}
   <span class="health"
         title="Is Heddled running · jobs waiting to be handled · problems in the last hour">

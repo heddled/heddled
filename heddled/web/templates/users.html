@@ -42,13 +42,16 @@
                 <input type="hidden" name="action" value="passwd">
                 <input type="hidden" name="username" value="{{ person.username }}">
                 <input name="password" type="password" placeholder="new password" required
+                       autocomplete="new-password"
                        aria-label="New password for {{ person.username }}">
                 <input name="confirm" type="password" placeholder="repeat it" required
+                       autocomplete="new-password"
                        aria-label="Repeat the new password">
                 <button class="btn tiny" type="submit">Set password</button>
               </form>
               {% if person.active %}
-              <form method="post" action="/users">
+              <form method="post" action="/users"
+                    data-confirm="Suspend {{ person.username }}? They are signed out and cannot sign back in. You can restore them from this same menu.">
                 <input type="hidden" name="action" value="suspend">
                 <input type="hidden" name="username" value="{{ person.username }}">
                 <button class="btn tiny" type="submit">Suspend</button>
@@ -81,7 +84,8 @@
     <input type="hidden" name="action" value="create">
     <div class="field-grid">
       <label>Username
-        <input name="username" required pattern="[a-zA-Z0-9._\-]{2,32}"></label>
+        <input name="username" required pattern="[a-zA-Z0-9._\-]{2,32}"
+               autocomplete="off"></label>
       <label>Their name <span class="muted">(optional)</span>
         <input name="display_name"></label>
       <label>Can do

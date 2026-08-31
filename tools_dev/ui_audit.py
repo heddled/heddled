@@ -145,8 +145,92 @@ JS = r"""
   document.querySelectorAll('img:not([alt])').forEach(
     img => structure.push('image with no alt text'));
 
+  // ------------------------------------------------------ habits, not rules
+  //
+  // The measurements above are pass/fail. These are the practices a screen is
+  // judged by even when nothing is technically broken: can you see where you
+  // are, does colour carry meaning on its own, does a destructive button say
+  // so, does the browser know this is a password.
+  const ux = [];
+
+  // Exactly one <main>, and a nav. Without landmarks, "skip to content" is the
+  // only way past the header and screen-reader navigation has nothing to grip.
+  const mains = document.querySelectorAll('main').length;
+  if (mains !== 1) ux.push(`${mains} <main> landmarks (want exactly 1)`);
+  if (!document.querySelector('nav, [role=navigation]')
+      && !document.body.classList.contains('chat-page')
+      && !document.body.classList.contains('inbox-page')) {
+    ux.push('no <nav> landmark');
+  }
+
+  // Colour on its own is not information: a status people read by hue is one
+  // that a colour-blind reader, or a printed page, does not carry.
+  document.querySelectorAll('.badge, .status, .step-dot, .cap-fill').forEach(el => {
+    const text = (el.textContent || '').trim();
+    // The label routinely sits on the wrapper — a meter is one element with a
+    // fill inside it — so look up, not just at the parent's text.
+    const labelled = el.getAttribute('aria-label') || el.title
+      || el.closest('[aria-label], [title], [role=img]')
+      || (el.parentElement && (el.parentElement.textContent || '').trim());
+    if (!text && !labelled) {
+      ux.push(`colour is the only signal: ${el.className}`);
+    }
+  });
+
+  // A new tab is a surprise worth announcing, and an unguarded one hands the
+  // opened page a reference back to this one.
+  document.querySelectorAll('a[target=_blank]').forEach(a => {
+    const rel = (a.getAttribute('rel') || '');
+    if (!rel.includes('noopener')) ux.push(`target=_blank without rel=noopener: ${a.href}`);
+  });
+
+  // Password managers and browsers need telling.
+  document.querySelectorAll(
+      'input[type=password], input[name=username]:not([type=hidden])').forEach(el => {
+    if (!el.getAttribute('autocomplete')) {
+      ux.push(`no autocomplete on ${el.type === 'password' ? 'password' : 'username'} field`);
+    }
+  });
+
+  // Below about 12px, body text stops being comfortably readable.
+  const tiny = new Set();
+  document.querySelectorAll('p, li, td, th, label, span, div, button, a').forEach(el => {
+    if (!el.childNodes.length) return;
+    const own = [...el.childNodes].some(n => n.nodeType === 3 && n.textContent.trim());
+    if (!own) return;
+    const size = parseFloat(getComputedStyle(el).fontSize);
+    if (size && size < 12) tiny.add(`${size}px on ${el.tagName.toLowerCase()}`
+      + `${el.className ? '.' + String(el.className).split(' ')[0] : ''}`);
+  });
+  tiny.forEach(x => ux.push(`text under 12px: ${x}`));
+
+  // A link is for going somewhere. A control that acts should be a button, or
+  // the keyboard and the context menu both lie about what it does.
+  document.querySelectorAll('a[href="#"], a[href^="javascript:"]').forEach(a => {
+    ux.push(`link that goes nowhere (should be a button): "${(a.textContent||'').trim().slice(0,24)}"`);
+  });
+
+  // Where am I? A nav with nothing marked current makes every page look alike.
+  const nav = document.querySelector('nav');
+  if (nav && nav.querySelectorAll('a').length > 2
+      && !nav.querySelector('[aria-current]')) {
+    ux.push('nav marks no current page with aria-current');
+  }
+
+  // Deleting without saying so.
+  document.querySelectorAll('form').forEach(f => {
+    const words = (f.textContent || '').toLowerCase();
+    const destructive = /\b(delete|remove|revoke|suspend|wipe|discard)\b/.test(words);
+    if (destructive && !f.dataset.confirm) {
+      const label = [...f.querySelectorAll('button')]
+        .map(b => (b.textContent || '').trim()).join('/');
+      if (label) ux.push(`destructive form with no confirmation: "${label.slice(0, 30)}"`);
+    }
+  });
+
   return {small: [...new Set(small)], lowContrast: [...new Set(lowContrast)], overflow,
-          unnamed: [...new Set(unnamed)], structure: [...new Set(structure)]};
+          unnamed: [...new Set(unnamed)], structure: [...new Set(structure)],
+          ux: [...new Set(ux)]};
 }
 """
 
@@ -169,6 +253,47 @@ def sign_in(page) -> None:
         sys.exit(f"could not sign in at {BASE} — audit would only measure /login")
 
 
+def keyboard_sweep(page, path: str) -> list[str]:
+    """Tab through the page and check each stop shows a focus ring.
+
+    Deliberately real key presses. `element.focus()` does not put Chromium into
+    the `:focus-visible` state, so a stylesheet with a perfectly good ring
+    measures as having none — which is how this check first reported every link
+    in the console as broken.
+    """
+    findings: list[str] = []
+    page.keyboard.press("Tab")
+    seen = set()
+    for _ in range(30):
+        info = page.evaluate("""() => {
+            const el = document.activeElement;
+            if (!el || el === document.body) return null;
+            const s = getComputedStyle(el);
+            return {
+                tag: el.tagName.toLowerCase(),
+                cls: (el.className || '').toString().split(' ')[0],
+                text: (el.textContent || el.value || '').trim().slice(0, 24),
+                outline: s.outlineStyle, width: s.outlineWidth,
+                shadow: s.boxShadow,
+                key: (el.tagName + '|' + (el.className||'') + '|'
+                      + (el.textContent||'').trim().slice(0, 20)),
+            };
+        }""")
+        if not info:
+            break
+        if info["key"] in seen:
+            break
+        seen.add(info["key"])
+        ringed = (info["outline"] not in ("none", "") and info["width"] != "0px") \
+            or info["shadow"] not in ("none", "")
+        if not ringed:
+            findings.append(f"no focus ring when tabbed to: {info['tag']}"
+                            f"{'.' + info['cls'] if info['cls'] else ''}"
+                            f" \"{info['text']}\"")
+        page.keyboard.press("Tab")
+    return findings
+
+
 def reveal(page) -> None:
     """Open the panels that are shut by default, so they get measured too."""
     for selector in ("details.rename summary", "details.advanced summary"):
@@ -185,9 +310,10 @@ def sweep(page, label: str) -> None:
         page.goto(BASE + path, wait_until="networkidle")
         reveal(page)
         r = page.evaluate(JS)
+        r["ux"] += keyboard_sweep(page, path)
         kinds = (("tiny target", r["small"]), ("contrast", r["lowContrast"]),
                  ("overflow", r["overflow"]), ("unnamed", r["unnamed"]),
-                 ("structure", r["structure"]))
+                 ("structure", r["structure"]), ("ux", r["ux"]))
         if any(items for _, items in kinds):
             clean = False
             print(f"\n{path}")

@@ -11,6 +11,13 @@ design work is verified rather than assumed.
     python tools_dev/css_audit.py    # classes templates ask for vs rules that exist
     python tools_dev/ui_shots.py out # every screen, light and dark
 
+`ui_audit.py` also checks the habits a screen is judged by even when nothing
+is technically broken: a visible focus ring when you *tab* (calling
+`element.focus()` does not put Chromium into `:focus-visible`, and testing it
+that way reports every link in the console as broken), colour that carries
+meaning on its own, destructive buttons that say so, `aria-current` on the nav,
+`autocomplete` on credential fields, and text under 12px.
+
 `ui_audit.py` measures what the eye estimates badly:
 
 * **Contrast** of every text node against its nearest painted background,
