@@ -166,6 +166,41 @@ function addCopy(el) {
   meta.append(btn);
 }
 
+// "That was wrong", from the person who noticed. The conversation becomes a
+// test, which is the only reliable way tests about real behaviour ever get
+// written — the alternative is somebody curating them later from memory.
+function addReport(el) {
+  const meta = el.parentElement.querySelector('.turn-meta');
+  if (!meta || meta.querySelector('.report-reply')) return;
+  const btn = document.createElement('button');
+  btn.type = 'button';
+  btn.className = 'report-reply';
+  btn.textContent = 'Not right';
+  btn.setAttribute('aria-label', 'Report this reply as wrong');
+  btn.addEventListener('click', async () => {
+    if (!sessionId) return;
+    const note = window.prompt(
+      'What should it have said, or what went wrong?\n\n'
+      + 'This conversation is saved as a test, so the same mistake gets caught '
+      + 'next time.') ;
+    if (note === null) return;          // cancelled
+    btn.disabled = true;
+    btn.textContent = 'Saving…';
+    try {
+      const r = await fetch(`/chat/${encodeURIComponent(AGENT)}/report`, {
+        method: 'POST', headers: {'content-type': 'application/json'},
+        body: JSON.stringify({session_id: sessionId, note})
+      });
+      btn.textContent = r.ok ? 'Reported — thank you' : 'Could not save that';
+      btn.classList.toggle('done', r.ok);
+    } catch (err) {
+      btn.textContent = 'Could not save that';
+      btn.disabled = false;
+    }
+  });
+  meta.append(btn);
+}
+
 // What it is doing, while it does it. Names only — never arguments, never
 // results. Those belong to whoever runs the agent, and this page is not that.
 function stepLine(text) {
@@ -253,6 +288,7 @@ function connect(sid) {
     el.dataset.raw = text;
     el.innerHTML = renderMd(text);
     addCopy(el);
+    addReport(el);
     live = null;
     busy(false);
     toBottom(true);
@@ -359,6 +395,7 @@ document.querySelectorAll('.bubble.agent[data-md]').forEach(el => {
   el.dataset.raw = raw;
   el.innerHTML = renderMd(raw);
   addCopy(el);
+  addReport(el);
 });
 
 toBottom(true);

@@ -1,0 +1,81 @@
+{#- Standalone, for the same reason the chat page is: somebody whose whole job
+    is signing things off should not be handed the console to do it. -#}
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Waiting for you</title>
+<link rel="icon" href="/static/brand/icon.svg" type="image/svg+xml">
+<link rel="stylesheet" href="/static/console.css">
+</head>
+<body class="inbox-page">
+
+<header class="chat-head">
+  <span class="chat-who">
+    <svg class="brand-mark" viewBox="0 0 64 64" fill="none" stroke-linecap="square"
+         aria-hidden="true" focusable="false">
+      <g stroke="currentColor" stroke-width="7.5">
+        <path d="M18 6 V26 M18 38 V58"/><path d="M46 6 V26 M46 38 V58"/>
+        <path d="M6 18 H26 M38 18 H58"/><path d="M6 50 H26 M38 50 H58"/>
+      </g>
+      <path d="M6 34 H34" stroke="var(--brand-thread, #B4442E)" stroke-width="7.5"/>
+      <circle cx="48" cy="34" r="6.5" fill="var(--brand-thread, #B4442E)"/>
+    </svg>
+    <b>Waiting for you</b>
+  </span>
+  <span class="spacer"></span>
+  {% if waiting %}
+  <span class="muted small">{{ waiting | length }} to decide</span>
+  {% endif %}
+</header>
+
+<main class="inbox-main">
+  {% if done %}
+  <p class="banner ok">Recorded: {{ done }}. Whatever was waiting has carried on.</p>
+  {% endif %}
+  {% if problem %}
+  <p class="banner bad">{{ problem }}.</p>
+  {% endif %}
+
+  {% for a in waiting %}
+  <section class="ask">
+    <div class="ask-head">
+      <h2>{{ a.what }}</h2>
+      <span class="muted small">{{ a.agent }} · waiting {{ a.requested_at | ago }}</span>
+    </div>
+
+    {% if a.reason %}<p class="ask-why">{{ a.reason }}</p>{% endif %}
+
+    {% if a.args %}
+    <dl class="ask-args">
+      {% for key, value in a.args.items() %}
+      <div><dt>{{ key.replace('_', ' ') }}</dt><dd>{{ value }}</dd></div>
+      {% endfor %}
+    </dl>
+    {% endif %}
+
+    <form method="post" action="/approvals/{{ a.id }}" class="ask-actions">
+      <input name="note" placeholder="A note, if you want one on the record"
+             aria-label="A note about this decision" autocomplete="off">
+      <span class="ask-buttons">
+      {#- No confirmation dialog. This screen *is* the confirmation — the turn
+          is already stopped and waiting on it — and a second "are you sure" on
+          top of that is friction for somebody working a queue. -#}
+      <button class="btn" type="submit" name="decision" value="denied">Refuse</button>
+      <button class="btn primary" type="submit" name="decision" value="approved">
+        Approve</button>
+      </span>
+    </form>
+  </section>
+  {% else %}
+  <div class="inbox-empty">
+    <h1>Nothing is waiting</h1>
+    <p class="muted">When an assistant reaches something it needs signed off,
+      it will appear here and stop until you decide.</p>
+  </div>
+  {% endfor %}
+</main>
+
+</body>
+</html>

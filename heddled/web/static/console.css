@@ -1278,3 +1278,100 @@ details.picker > summary:hover .picker-verb { text-decoration: underline; }
     background: rgba(0, 0, 0, .34);
   }
 }
+
+/* ========================================================== approvals inbox
+   The queue for somebody whose job is signing things off. Same reasoning as
+   the chat page: a person who is not running the place should not be handed
+   the console in order to do one thing. */
+
+.inbox-page { margin: 0; min-height: 100vh; }
+.inbox-main {
+  width: 100%; max-width: 700px; margin: 0 auto; padding: 22px 18px 60px;
+  display: flex; flex-direction: column; gap: 14px;
+}
+
+.ask {
+  border: 1px solid var(--line); border-radius: 10px; background: var(--panel);
+  padding: 16px 18px;
+}
+/* The thing that is waiting is the headline, not the assistant that asked. */
+.ask-head { display: flex; align-items: baseline; gap: 12px; flex-wrap: wrap; }
+.ask-head h2 { margin: 0; font-size: 17px; }
+.ask-why { margin: 8px 0 0; }
+
+.ask-args {
+  margin: 12px 0 0; display: grid; gap: 1px;
+  border: 1px solid var(--line); border-radius: 8px; overflow: hidden;
+  background: var(--line);
+}
+.ask-args > div {
+  display: grid; grid-template-columns: 11rem 1fr; gap: 12px;
+  padding: 8px 11px; background: var(--panel-2);
+}
+.ask-args dt { color: var(--muted); font-size: 13px; }
+.ask-args dd { margin: 0; overflow-wrap: anywhere; }
+
+.ask-actions {
+  display: flex; gap: 9px; align-items: center; margin-top: 14px;
+  flex-wrap: wrap;
+}
+.ask-actions input { flex: 1 1 14rem; min-width: 0; }
+/* The two decisions stay together whatever the width — Approve dropping to a
+   line of its own reads as a different, more serious control than Refuse. */
+.ask-buttons { display: flex; gap: 9px; flex: 0 0 auto; }
+
+.inbox-empty { text-align: center; padding: 60px 0; }
+.inbox-empty h1 { font-size: 20px; margin: 0 0 6px; }
+
+@media (max-width: 640px) {
+  .ask-args > div { grid-template-columns: 1fr; gap: 2px; }
+  .ask-actions input { flex: 1 1 100%; }
+}
+
+/* "Not right" sits beside Copy, quiet until the turn is hovered — the same
+   weight as copying, because reporting a bad answer should feel as ordinary. */
+.report-reply {
+  background: none; border: 0; padding: 2px 4px; cursor: pointer;
+  color: var(--muted); font: inherit; font-size: 11.5px; opacity: 0;
+  transition: opacity .12s;
+}
+.turn:hover .report-reply, .report-reply:focus-visible { opacity: 1; }
+.report-reply:hover { color: var(--text); text-decoration: underline; }
+.report-reply.done, .report-reply[disabled] { opacity: 1; cursor: default; }
+.report-reply.done { color: var(--ok); text-decoration: none; }
+
+/* ================================================================ spending */
+
+.bars {
+  display: flex; align-items: flex-end; gap: 2px; height: 140px;
+  padding: 10px 0 0; border-bottom: 1px solid var(--line);
+}
+/* The column must be full height or a percentage on the bar inside it has
+   nothing to resolve against, and every bar renders flat. */
+.bar-col { flex: 1 1 0; height: 100%; display: flex; align-items: flex-end;
+           min-width: 3px; }
+.bar {
+  width: 100%; background: var(--accent); border-radius: 2px 2px 0 0;
+  min-height: 1px;
+}
+.bars-foot { display: flex; justify-content: space-between; padding-top: 6px; }
+
+/* How close a cap is, at a glance. Amber before it bites, because finding out
+   by having the action refused is finding out too late. */
+td.cap-cell { width: 130px; min-width: 130px; }
+.cap-bar {
+  display: block; height: 7px; border-radius: 4px; background: var(--panel-2);
+  overflow: hidden;
+}
+.cap-fill { display: block; height: 100%; background: var(--ok); }
+.cap-fill.hot { background: var(--warn); }
+
+/* Three figures at the top of Spending. The console had no tile like this
+   because nothing had ever needed to lead with a number. */
+.stat-row { display: flex; flex-wrap: wrap; gap: 12px; margin: 0 0 16px; }
+.stat {
+  flex: 1 1 10rem; padding: 12px 14px; border: 1px solid var(--line);
+  border-radius: 9px; background: var(--panel);
+}
+.stat-n { display: block; font-size: 22px; font-weight: 600; letter-spacing: -.01em; }
+.stat-l { display: block; font-size: 12.5px; color: var(--muted); margin-top: 2px; }

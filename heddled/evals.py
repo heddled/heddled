@@ -56,12 +56,22 @@ def extract_spec(session_id: str) -> dict:
     }
 
 
-def promote_session(session_id: str, name: str = None) -> str:
+def promote_session(session_id: str, name: str = None, reported: dict = None) -> str:
+    """Turn a recorded conversation into a test.
+
+    `reported` carries who said it was wrong and what they said about it, when
+    the promotion came from somebody using the agent rather than an operator
+    curating tests. It rides in the spec because that is what travels with the
+    trace — the note explains the test, and a note kept somewhere else is a
+    note nobody reads next to the thing it is about.
+    """
     store = get_store()
     session = store.get_session(session_id)
     if not session:
         raise LookupError("unknown session")
     spec = extract_spec(session_id)
+    if reported:
+        spec["reported"] = reported
     label = name or session["title"] or session_id
     return store.add_golden(label, session["agent"], session_id, spec)
 

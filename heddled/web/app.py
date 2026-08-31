@@ -1834,6 +1834,128 @@ def register_api(app: Flask) -> None:
         return jsonify({"session_id": result["session_id"],
                         "turn_id": result.get("turn_id")})
 
+    @app.route("/spending")
+    def spending():
+        """Where the money and the tokens went.
+
+        The ledger has recorded every model call and every action with a
+        declared cost since the first turn, and nothing has ever read it back:
+        you could cap an agent at 500 euros a day with no way of knowing
+        whether it spends five or five hundred. Budgets were being set blind.
+        """
+        store = get_store()
+        window = int(request.args.get("days", 30))
+        since = time.time() - window * 86400
+        by_day = [{"day": r["day"], "total": r["total"]}
+                  for r in store.spend_by_day("eur", days=window)]
+        peak = max([d["total"] for d in by_day] or [0])
+
+        # The caps that were set, so the numbers can be read against something.
+        caps = []
+        for agent in get_registry().agents().values():
+            for policy in agent.policies or []:
+                budget = policy.get("budget") or {}
+                if budget.get("max_eur_per_day"):
+                    caps.append({"agent": agent.name,
+                                 "tool": policy.get("tool") or "*",
+                                 "cap": float(budget["max_eur_per_day"]),
+                                 "today": store.spend_today("eur", agent=agent.name)})
+        return render_template(
+            "spending.html", window=window, by_day=by_day, peak=peak,
+            total=store.spend_total("eur", since),
+            tokens=store.spend_total("tokens", since),
+            by_agent=store.spend_by_agent("eur", since),
+            by_tool=store.spend_by_tool("eur", since),
+            today=store.spend_today("eur"), caps=caps,
+        )
+
+    # ======================================================= approvals inbox
+    #
+    # A gated action pauses the turn and is routed out to wherever the approver
+    # already works — that is the design and it stands. But somebody whose job
+    # is signing things off had nowhere to go: a one-shot signed link handles
+    # one decision, and the alternative was a console account and the whole
+    # estate. This is the queue, and nothing else.
+
+    def _approval_view(row) -> dict:
+        """One waiting decision, in the words an approver needs."""
+        try:
+            args = json.loads(row["args"] or "{}")
+        except ValueError:
+            args = {}
+        # A double-encoded value comes back as a string, and a screen that
+        # explodes on one is worse than one that shows the row plainly.
+        if not isinstance(args, dict):
+            args = {"arguments": args}
+        return {
+            "id": row["id"],
+            "agent": row["agent"],
+            "tool": row["tool"],
+            "what": str(row["tool"] or "").replace("_", " "),
+            "args": args,
+            "in_words": story.readable_args(args),
+            "reason": row["reason"],
+            "requested_at": row["requested_at"],
+            "session_id": row["session_id"],
+        }
+
+    @app.route("/approvals")
+    def approvals_inbox():
+        waiting = [_approval_view(r) for r in get_store().pending_approvals()]
+        return render_template("approvals.html", waiting=waiting,
+                               done=request.args.get("done"),
+                               problem=request.args.get("problem"))
+
+    @app.route("/approvals/<aid>", methods=["POST"])
+    def approvals_decide(aid):
+        who = (getattr(g, "user", None) or {}).get("username") or "console"
+        decision = (request.form.get("decision") or "").strip()
+        if decision not in ("approved", "denied"):
+            return redirect(url_for("approvals_inbox", problem="that is not a decision"))
+        try:
+            # No token: the signed-in account is the credential here, where on
+            # the emailed link the token is.
+            result = resolve_approval(aid, decision, resolver=who,
+                                      note=request.form.get("note") or None)
+        except LookupError:
+            return redirect(url_for("approvals_inbox", problem="that request is gone"))
+        except ValueError as exc:
+            return redirect(url_for("approvals_inbox", problem=str(exc)))
+        if result.get("already_resolved"):
+            return redirect(url_for("approvals_inbox",
+                                    problem=f"somebody already {result['status']} that"))
+        return redirect(url_for("approvals_inbox", done=result["status"]))
+
+    @app.route("/chat/<name>/report", methods=["POST"])
+    def chat_report(name):
+        """"That answer was wrong" — from the person who noticed.
+
+        The conversation becomes a golden trace, which is a test. Evals are the
+        thing everybody ships and nobody writes, because writing them is a
+        separate chore done later by whoever is least motivated. Here the test
+        is written by the person who saw the problem, at the moment they saw
+        it, as a by-product of complaining about it.
+        """
+        agent = _chat_agent_or_404(name)
+        who = (getattr(g, "user", None) or {}).get("username")
+        body = request.get_json(silent=True) or {}
+        sid = body.get("session_id")
+        session = get_store().get_session(sid) if sid else None
+        if not session or not _mine(session, who, agent.name):
+            abort(404)
+
+        note = (body.get("note") or "").strip()
+        label = f"reported by {who}"
+        if session["title"]:
+            label += f": {session['title'][:60]}"
+        try:
+            golden_id = evals.promote_session(
+                sid, name=label,
+                reported={"by": who, "note": note, "at": time.time()})
+        except LookupError:
+            abort(404)
+        return jsonify({"saved": True, "golden_id": golden_id})
+
     @app.route("/chat/<name>/stream/<sid>")
     def chat_stream(name, sid):
         """Spine events for one conversation, plus the token deltas.

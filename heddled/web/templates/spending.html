@@ -1,0 +1,130 @@
+{% extends "base.html" %}
+{% block title %}Spending · Heddled{% endblock %}
+{% block body %}
+
+<header class="page-head">
+  <h1>Spending</h1>
+  <div class="page-actions">
+    {% for d in [7, 30, 90] %}
+    <a class="btn tiny {{ 'primary' if window == d }}" href="?days={{ d }}">
+      {{ d }} days</a>
+    {% endfor %}
+  </div>
+</header>
+
+<div class="stat-row">
+  <div class="stat">
+    <span class="stat-n">€{{ '%.2f' | format(total) }}</span>
+    <span class="stat-l">last {{ window }} days</span>
+  </div>
+  <div class="stat">
+    <span class="stat-n">€{{ '%.2f' | format(today) }}</span>
+    <span class="stat-l">today</span>
+  </div>
+  <div class="stat">
+    <span class="stat-n">{{ '{:,}'.format(tokens | int) }}</span>
+    <span class="stat-l">tokens</span>
+  </div>
+</div>
+
+{% if by_day and peak > 0 %}
+<section class="card">
+  <h2>By day</h2>
+  {#- A plain bar chart in HTML. Every bar carries its own figure as text, so
+      the shape is the quick read and the number is still there to be read —
+      and it works with no JavaScript and no charting library. -#}
+  <div class="bars" role="img"
+       aria-label="Daily spend over the last {{ window }} days, highest €{{ '%.2f' | format(peak) }}">
+    {% for d in by_day %}
+    <div class="bar-col" title="{{ d.day }} · €{{ '%.2f' | format(d.total) }}">
+      <span class="bar" style="height: {{ (d.total / peak * 100) | round(1) }}%"></span>
+    </div>
+    {% endfor %}
+  </div>
+  <div class="bars-foot muted small">
+    <span>{{ by_day[0].day }}</span>
+    <span>highest day €{{ '%.2f' | format(peak) }}</span>
+    <span>{{ by_day[-1].day }}</span>
+  </div>
+</section>
+{% endif %}
+
+{% if caps %}
+<section class="card">
+  <h2>Against the caps you set</h2>
+  <table class="grid">
+    <thead><tr><th>Assistant</th><th>Action</th><th>Today</th><th>Cap</th><th>Used</th></tr></thead>
+    <tbody>
+      {% for c in caps %}
+      <tr>
+        <td><a href="/agents/{{ c.agent }}">{{ c.agent }}</a></td>
+        <td><code>{{ c.tool }}</code></td>
+        <td>€{{ '%.2f' | format(c.today) }}</td>
+        <td>€{{ '%.2f' | format(c.cap) }}</td>
+        <td class="cap-cell">
+          <span class="cap-bar">
+            <span class="cap-fill {{ 'hot' if c.today >= c.cap * 0.8 }}"
+                  style="width: {{ [c.today / c.cap * 100, 100] | min | round(1) }}%"></span>
+          </span>
+        </td>
+      </tr>
+      {% endfor %}
+    </tbody>
+  </table>
+  <p class="hint">A cap stops the action and tells the assistant why, which it
+    passes on rather than failing silently. Spend counts model calls plus any
+    <code>cost_eur</code> an action declares for itself.</p>
+</section>
+{% endif %}
+
+<div class="cols">
+  <section class="card">
+    <h2>By assistant</h2>
+    {% if by_agent %}
+    <table class="grid">
+      <thead><tr><th>Assistant</th><th>Spent</th></tr></thead>
+      <tbody>
+        {% for r in by_agent %}
+        <tr>
+          <td><a href="/agents/{{ r['agent'] }}">{{ r['agent'] }}</a></td>
+          <td>€{{ '%.2f' | format(r['total']) }}</td>
+        </tr>
+        {% endfor %}
+      </tbody>
+    </table>
+    {% else %}
+    <p class="muted">Nothing recorded in this window.</p>
+    {% endif %}
+  </section>
+
+  <section class="card">
+    <h2>By action</h2>
+    {% if by_tool %}
+    <table class="grid">
+      <thead><tr><th>Action</th><th>Spent</th><th>Runs</th></tr></thead>
+      <tbody>
+        {% for r in by_tool %}
+        <tr>
+          <td><a href="/tools/{{ r['tool'] }}">{{ r['tool'] }}</a></td>
+          <td>€{{ '%.2f' | format(r['total']) }}</td>
+          <td>{{ r['entries'] }}</td>
+        </tr>
+        {% endfor %}
+      </tbody>
+    </table>
+    {% else %}
+    <p class="muted">No action has declared a cost. Add <code>cost_eur</code>
+      to one that charges you per call and it will appear here.</p>
+    {% endif %}
+  </section>
+</div>
+
+{% if not total and not tokens %}
+<section class="card">
+  <p class="muted">Nothing has been spent yet — or the models in use report no
+    cost. The built-in <code>mock/echo</code> is free, so a project that has
+    only been tried offline shows nothing here.</p>
+</section>
+{% endif %}
+
+{% endblock %}

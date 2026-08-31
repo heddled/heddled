@@ -259,8 +259,16 @@ def install(app) -> None:
         # that agent is allowed, bounded by its own policies and budgets. An
         # agent that can send email can send email on a viewer's say-so.
         if request.method in ("POST", "PUT", "PATCH", "DELETE"):
-            using_not_changing = (path.startswith("/chat/")
-                                  and path.endswith("/messages"))
+            using_not_changing = (
+                (path.startswith("/chat/") and path.endswith("/messages"))
+                # Deciding an approval is using Heddled too. Note what the
+                # alternative would be: requiring `member` to sign something
+                # off gives an approver the run of the agent files as well,
+                # which is more power, not less. The decision is recorded
+                # against their name either way — and anybody holding the
+                # emailed link can already decide it without an account at all.
+                or _is_approval_decision(path)
+            )
             if user["role"] not in users.CAN_WRITE and not using_not_changing:
                 users.record(store, user["username"], "denied.write", path,
                              ip=request.remote_addr)
@@ -275,6 +283,12 @@ def install(app) -> None:
 # Paths only an administrator may change: people, credentials, and anything
 # that reaches outside Heddled.
 ADMIN_WRITE_PREFIXES = ("/users", "/settings")
+
+
+def _is_approval_decision(path: str) -> bool:
+    """`/approvals/<id>` and nothing else — not the listing, not a prefix."""
+    parts = [p for p in path.split("/") if p]
+    return len(parts) == 2 and parts[0] == "approvals"
 
 
 def _needs_admin(path: str) -> bool:

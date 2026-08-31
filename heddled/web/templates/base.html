@@ -35,6 +35,7 @@
   <a href="/tools" class="{{ 'on' if request.path.startswith('/tools') }}">Tools</a>
   <a href="/evals" class="{{ 'on' if request.path.startswith('/evals') }}">Tests</a>
   <a href="/deployments" class="{{ 'on' if request.path.startswith('/deployments') }}">Publish</a>
+  <a href="/spending" class="{{ 'on' if request.path.startswith('/spending') }}">Spending</a>
   {% if g.user and g.user.role == 'admin' %}
   <a href="/users" class="{{ 'on' if request.path.startswith('/users') }}">People</a>
   <a href="/settings" class="{{ 'on' if request.path.startswith('/settings') }}">Settings</a>

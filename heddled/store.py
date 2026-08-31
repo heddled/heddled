@@ -677,6 +677,37 @@ class Store:
             (time.time(), time.strftime("%Y-%m-%d"), agent, session_id, tool, kind, amount),
         )
 
+    def spend_by_day(self, kind: str = "eur", days: int = 30) -> list[sqlite3.Row]:
+        """What was spent per day, oldest first. The ledger has carried this
+        since the first turn and nothing has ever read it back — every budget
+        on the platform has been set blind."""
+        return self.query(
+            "SELECT day, COALESCE(SUM(amount),0) total FROM ledger"
+            " WHERE kind=? GROUP BY day ORDER BY day DESC LIMIT ?",
+            (kind, days),
+        )[::-1]
+
+    def spend_by_agent(self, kind: str = "eur", since: float = 0) -> list[sqlite3.Row]:
+        return self.query(
+            "SELECT agent, COALESCE(SUM(amount),0) total, COUNT(*) entries"
+            " FROM ledger WHERE kind=? AND ts>=? AND agent IS NOT NULL"
+            " GROUP BY agent ORDER BY total DESC",
+            (kind, since),
+        )
+
+    def spend_by_tool(self, kind: str = "eur", since: float = 0) -> list[sqlite3.Row]:
+        return self.query(
+            "SELECT tool, COALESCE(SUM(amount),0) total, COUNT(*) entries"
+            " FROM ledger WHERE kind=? AND ts>=? AND tool IS NOT NULL"
+            " GROUP BY tool ORDER BY total DESC",
+            (kind, since),
+        )
+
+    def spend_total(self, kind: str = "eur", since: float = 0) -> float:
+        return float(self.one(
+            "SELECT COALESCE(SUM(amount),0) t FROM ledger WHERE kind=? AND ts>=?",
+            (kind, since))["t"])
+
     def spend_today(self, kind: str, agent: str = None, session_id: str = None) -> float:
         sql = "SELECT COALESCE(SUM(amount),0) t FROM ledger WHERE day=? AND kind=?"
         params: list = [time.strftime("%Y-%m-%d"), kind]
