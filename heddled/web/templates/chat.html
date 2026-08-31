@@ -8,11 +8,14 @@
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
-<title>{{ agent.name }}</title>
-<link rel="icon" href="/static/brand/icon.svg" type="image/svg+xml">
-<link rel="stylesheet" href="/static/console.css">
+<title>{{ agent.name }} · Heddled</title>
+<link rel="icon" href="{{ url_for('static', filename='brand/icon.svg') }}"
+      type="image/svg+xml">
+<link rel="stylesheet" href="{{ url_for('static', filename='console.css') }}">
 </head>
 <body class="chat-page">
+
+<a class="skip-link" href="#main">Skip to content</a>
 
 {#- The thread list. On a phone it slides over the conversation rather than
     squeezing it, which is the only way two panes fit on 390px. -#}
@@ -73,14 +76,14 @@
       <span aria-hidden="true">☰</span> Conversations
     </button>
     <span class="chat-title">
-      <b>{{ agent.name }}</b>
+      <h1>{{ agent.name }}</h1>
       {% if agent.description %}
       <span class="muted small">{{ agent.description }}</span>
       {% endif %}
     </span>
   </header>
 
-  <main class="chat-main">
+  <main class="chat-main" id="main">
     <div id="chat" class="chat-log" aria-live="polite" aria-atomic="false"
          tabindex="0" aria-label="Conversation">
       {% for m in history %}
@@ -94,7 +97,7 @@
       </div>
       {% else %}
       <div class="chat-empty" id="chat-empty">
-        <h1>{{ agent.name }}</h1>
+        <p class="chat-empty-lead">{{ agent.name }}</p>
         {% if agent.description %}<p class="muted">{{ agent.description }}</p>{% endif %}
         {% if openers %}
         <div class="openers">
@@ -124,6 +127,6 @@
   // Everything up to here is already on the page; the stream starts after it.
   window.CHAT_AFTER = {{ last_seq | default(0) | int }};
 </script>
-<script src="/static/chat.js"></script>
+<script src="{{ url_for('static', filename='chat.js') }}"></script>
 </body>
 </html>

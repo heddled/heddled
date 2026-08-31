@@ -5,11 +5,14 @@
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
-<title>Waiting for you</title>
-<link rel="icon" href="/static/brand/icon.svg" type="image/svg+xml">
-<link rel="stylesheet" href="/static/console.css">
+<title>Waiting for you · Heddled</title>
+<link rel="icon" href="{{ url_for('static', filename='brand/icon.svg') }}"
+      type="image/svg+xml">
+<link rel="stylesheet" href="{{ url_for('static', filename='console.css') }}">
 </head>
 <body class="inbox-page">
+
+<a class="skip-link" href="#main">Skip to content</a>
 
 <header class="chat-head">
   <span class="chat-who">
@@ -22,7 +25,7 @@
       <path d="M6 34 H34" stroke="var(--brand-thread, #B4442E)" stroke-width="7.5"/>
       <circle cx="48" cy="34" r="6.5" fill="var(--brand-thread, #B4442E)"/>
     </svg>
-    <b>Waiting for you</b>
+    <h1>Waiting for you</h1>
   </span>
   <span class="spacer"></span>
   {% if waiting %}
@@ -30,7 +33,7 @@
   {% endif %}
 </header>
 
-<main class="inbox-main">
+<main class="inbox-main" id="main">
   {% if done %}
   <p class="banner ok">Recorded: {{ done }}. Whatever was waiting has carried on.</p>
   {% endif %}
@@ -70,7 +73,7 @@
   </section>
   {% else %}
   <div class="inbox-empty">
-    <h1>Nothing is waiting</h1>
+    <p class="inbox-empty-lead">Nothing is waiting</p>
     <p class="muted">When an assistant reaches something it needs signed off,
       it will appear here and stop until you decide.</p>
   </div>

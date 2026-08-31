@@ -253,15 +253,15 @@ pre.payload.err { border-color: var(--bad); color: var(--bad); }
             align-items: center; flex-wrap: wrap; font-size: 13px; }
 .approval.approved { border-color: var(--ok); }
 .approval.denied { border-color: var(--bad); }
-.approve-card { max-width: 620px; margin: 24px auto; background: var(--panel);
-                border: 1px solid var(--line); border-radius: 8px; padding: 22px 26px; }
 .notice { background: var(--panel-2); border-left: 3px solid var(--accent);
           padding: 8px 12px; margin: 10px 0; border-radius: 3px; }
 .subsessions { margin: 6px 0; color: var(--muted); }
 .subsessions a { margin-left: 8px; }
-.case.pass { border-left: 3px solid var(--ok); }
-.case.fail { border-left: 3px solid var(--bad); }
-.assertions { margin: 4px 0; padding-left: 18px; font-size: 13px; }
+/* The template emits `passed`/`failed`, from `c.passed`. These rules said
+   `pass`/`fail`, so the stripe marking a failed case has never once been
+   drawn — the badge carried the whole signal on its own. */
+.case.passed { border-left: 3px solid var(--ok); }
+.case.failed { border-left: 3px solid var(--bad); }
 kbd { background: var(--panel-2); border: 1px solid var(--line); border-radius: 3px;
       padding: 0 4px; font-family: var(--mono); font-size: 11px; }
 
@@ -1375,3 +1375,32 @@ td.cap-cell { width: 130px; min-width: 130px; }
 }
 .stat-n { display: block; font-size: 22px; font-weight: 600; letter-spacing: -.01em; }
 .stat-l { display: block; font-size: 12.5px; color: var(--muted); margin-top: 2px; }
+
+/* The list of assistants to choose between, when more than one is open for
+   chat. Lost when the chat styles were rewritten and the picker has been
+   unstyled since. */
+.chat-pick { justify-content: center; padding: 34px 0; }
+.chat-pick .cards { align-content: start; }
+
+/* These pages put their heading in the header bar, so it is present whether or
+   not there is anything below it — an <h1> that only exists in an empty state
+   disappears the moment the page has content. */
+.chat-head h1, .side-head h1 {
+  font-size: 15px; font-weight: 600; margin: 0; line-height: 1.2;
+}
+.chat-empty-lead { font-size: 21px; font-weight: 600; margin: 0 0 4px; }
+.inbox-empty-lead { font-size: 20px; font-weight: 600; margin: 0 0 6px; }
+
+/* Whether a check passed. These list items have carried `pass`/`fail` since
+   the eval screen was written and neither has ever had a rule, so a check that
+   failed read exactly like one that passed — on the page whose entire job is
+   telling those two apart. */
+.assertions { list-style: none; padding: 0; margin: 4px 0 0; }
+.assertions li {
+  display: flex; align-items: baseline; gap: 8px; padding: 4px 0;
+  font-size: 14px;
+}
+.assertions li::before { font-size: 12px; line-height: 1.4; }
+.assertions li.pass::before { content: "✓"; color: var(--ok); }
+.assertions li.fail::before { content: "✕"; color: var(--bad); }
+.assertions li.fail { color: var(--bad); }

@@ -53,7 +53,7 @@
 <section class="card">
   <h2>Against the caps you set</h2>
   <table class="grid">
-    <thead><tr><th>Assistant</th><th>Action</th><th>Today</th><th>Cap</th><th>Used</th></tr></thead>
+    <thead><tr><th>Agent</th><th>Action</th><th>Today</th><th>Cap</th><th>Used</th></tr></thead>
     <tbody>
       {% for c in caps %}
       <tr>
@@ -71,7 +71,7 @@
       {% endfor %}
     </tbody>
   </table>
-  <p class="hint">A cap stops the action and tells the assistant why, which it
+  <p class="hint">A cap stops the action and tells the agent why, which it
     passes on rather than failing silently. Spend counts model calls plus any
     <code>cost_eur</code> an action declares for itself.</p>
 </section>
@@ -79,10 +79,10 @@
 
 <div class="cols">
   <section class="card">
-    <h2>By assistant</h2>
+    <h2>By agent</h2>
     {% if by_agent %}
     <table class="grid">
-      <thead><tr><th>Assistant</th><th>Spent</th></tr></thead>
+      <thead><tr><th>Agent</th><th>Spent</th></tr></thead>
       <tbody>
         {% for r in by_agent %}
         <tr>

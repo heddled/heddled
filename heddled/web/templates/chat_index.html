@@ -4,11 +4,14 @@
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
-<title>Assistants</title>
-<link rel="icon" href="/static/brand/icon.svg" type="image/svg+xml">
-<link rel="stylesheet" href="/static/console.css">
+<title>Assistants · Heddled</title>
+<link rel="icon" href="{{ url_for('static', filename='brand/icon.svg') }}"
+      type="image/svg+xml">
+<link rel="stylesheet" href="{{ url_for('static', filename='console.css') }}">
 </head>
 <body class="chat-page">
+
+<a class="skip-link" href="#main">Skip to content</a>
 
 <header class="chat-head">
   <span class="chat-who">
@@ -21,11 +24,11 @@
       <path d="M6 34 H34" stroke="var(--brand-thread, #B4442E)" stroke-width="7.5"/>
       <circle cx="48" cy="34" r="6.5" fill="var(--brand-thread, #B4442E)"/>
     </svg>
-    <b>Assistants</b>
+    <h1>Assistants</h1>
   </span>
 </header>
 
-<main class="chat-main chat-pick">
+<main class="chat-main chat-pick" id="main">
   {% if agents %}
   <div class="cards">
     {% for a in agents %}

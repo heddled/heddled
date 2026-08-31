@@ -20,7 +20,13 @@ USER, PASSWORD = "audit", "a-good-long-password"
 
 PAGES = ["/", "/agents/support", "/agents/support/test", "/agents/new",
          "/tools", "/tools/lookup_invoice", "/tools/new", "/tools/new?type=lookup",
-         "/sessions", "/evals", "/deployments", "/settings", "/users", "/account"]
+         "/tools/new?type=python",
+         "/sessions", "/evals", "/deployments", "/settings", "/users", "/account",
+         "/spending", "/spending?days=7",
+         # The surfaces that are not the console. They share this stylesheet, so
+         # they are subject to the same measurements — and a page nobody audits
+         # is where the contrast quietly goes wrong.
+         "/approvals", "/chat/support"]
 
 JS = r"""
 () => {
