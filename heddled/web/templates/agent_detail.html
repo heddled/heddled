@@ -446,6 +446,71 @@
     gates above still apply.</p>
 </section>
 
+<!-- ------------------------------------------------------------ workspace -->
+{% if workspace_files is not none %}
+<section class="card">
+  <div class="pane-head">
+    <h2>Its files</h2>
+    {% if workspace_files.root %}
+    <span class="muted small mono">{{ workspace_files.root }}</span>
+    {% endif %}
+  </div>
+
+  {% if workspace_files.problem %}
+  <p class="banner bad">{{ workspace_files.problem }}</p>
+  {% else %}
+
+  {% if workspace_files.files %}
+  <table class="grid">
+    <thead><tr><th>File</th><th>Size</th><th>Changed</th><th>Actions</th></tr></thead>
+    <tbody>
+      {% for f in workspace_files.files %}
+      <tr>
+        <td>
+          <span class="mono">{{ f.path }}</span>
+          {#- An operator who drops in a PDF and then wonders why the agent
+              says it cannot read it has been failed by the listing. -#}
+          {% if not f.readable %}
+          <span class="badge warn" title="The agent reads text only">not text</span>
+          {% endif %}
+        </td>
+        <td class="muted">{{ f.bytes | filesize }}</td>
+        <td class="muted">{{ f.modified | ago }}</td>
+        <td class="row-actions">
+          {% if f.readable %}
+          <a class="btn tiny" href="/agents/{{ agent.name }}/files/view?path={{ f.path | urlencode }}">View</a>
+          {% endif %}
+          <a class="btn tiny" href="/agents/{{ agent.name }}/files/download?path={{ f.path | urlencode }}">Download</a>
+          <form method="post" action="/agents/{{ agent.name }}/files" class="inline"
+                data-confirm="Delete {{ f.path }}? The agent cannot undo this and neither can you.">
+            <input type="hidden" name="action" value="delete">
+            <input type="hidden" name="path" value="{{ f.path }}">
+            <button class="btn tiny danger" type="submit">Delete</button>
+          </form>
+        </td>
+      </tr>
+      {% endfor %}
+    </tbody>
+  </table>
+  {% else %}
+  <p class="muted">Nothing in the folder yet. Put a file here, or drop one
+    straight into <code class="mono">{{ workspace_files.root }}</code> on the
+    server — it is the same folder.</p>
+  {% endif %}
+
+  <form method="post" action="/agents/{{ agent.name }}/files"
+        enctype="multipart/form-data" class="row wrap upload-row">
+    <input type="file" name="file" required aria-label="A file to add to the workspace">
+    <button class="btn" type="submit">Add file</button>
+  </form>
+  <p class="hint">The agent reads text — plain text, CSV, JSON, Markdown. It can
+    read and write anything inside this folder and nothing outside it. Put a rule
+    on <code>write_file</code> above if you want to approve changes before they
+    are written.</p>
+  {% endif %}
+</section>
+{% endif %}
+
 <!-- --------------------------------------------------------- conversations -->
 <section class="card">
   <div class="pane-head">

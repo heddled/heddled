@@ -1434,3 +1434,9 @@ td.cap-cell { width: 130px; min-width: 130px; }
 .assertions li.pass::before { content: "✓"; color: var(--ok); }
 .assertions li.fail::before { content: "✕"; color: var(--bad); }
 .assertions li.fail { color: var(--bad); }
+
+/* The add-a-file row on the workspace panel. A file input is taller than the
+   button beside it, so they are aligned rather than left to sit on a shared
+   baseline that neither of them respects. */
+.upload-row { align-items: center; gap: var(--s2); margin: var(--s3) 0 0; }
+.upload-row input[type="file"] { flex: 0 1 22rem; min-width: 0; }

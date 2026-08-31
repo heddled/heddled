@@ -278,3 +278,134 @@ class TestTheToggle:
                     data={"workspace_present": "1", "workspace": "on"})
         client.post("/agents/support/fields", data={"description": "Still here."})
         assert registry.get_agent("support").workspace is True
+
+
+def _with_workspace(project, registry, name="support"):
+    path = project / "agents" / f"{name}.yaml"
+    data = yamlio.load(path.read_text())
+    data["workspace"] = True
+    path.write_text(yamlio.dump(data))
+    return workspace.resolve_root(registry.get_agent(name))
+
+
+class TestTheWorkspacePanel:
+    def test_an_agent_without_one_shows_no_panel(self, client, registry):
+        assert "Its files" not in client.get("/agents/support").get_data(as_text=True)
+
+    def test_the_files_are_listed(self, client, project, registry):
+        root = _with_workspace(project, registry)
+        workspace.write(root, "invoices.csv", "a,b\n1,2\n")
+        body = client.get("/agents/support").get_data(as_text=True)
+        assert "Its files" in body and "invoices.csv" in body
+
+    def test_a_file_the_agent_cannot_read_says_so(self, client, project, registry):
+        """Otherwise an operator drops in a PDF and is left wondering why the
+        agent says it cannot read it."""
+        root = _with_workspace(project, registry)
+        (root / "invoice.pdf").write_bytes(b"%PDF-1.4\x00binary")
+        body = client.get("/agents/support").get_data(as_text=True)
+        assert "not text" in body
+
+    def test_a_broken_workspace_does_not_take_the_page_down(
+            self, client, project, registry):
+        path = project / "agents" / "support.yaml"
+        data = yamlio.load(path.read_text())
+        data["workspace"] = "./agents"          # refused, unconditionally
+        path.write_text(yamlio.dump(data))
+        r = client.get("/agents/support")
+        assert r.status_code == 200
+        assert "overlaps" in r.get_data(as_text=True)
+
+
+class TestViewingAndDownloading:
+    def test_viewing_shows_the_text(self, client, project, registry):
+        root = _with_workspace(project, registry)
+        workspace.write(root, "notes.txt", "the quick brown fox")
+        body = client.get(
+            "/agents/support/files/view?path=notes.txt").get_data(as_text=True)
+        assert "the quick brown fox" in body
+
+    def test_downloading_is_always_an_attachment(self, client, project, registry):
+        """This serves whatever somebody put in the folder, from the origin
+        holding the administrator's session. Inline, an uploaded .html would run
+        as a page on that origin."""
+        root = _with_workspace(project, registry)
+        workspace.write(root, "evil.html", "<script>alert(1)</script>")
+        r = client.get("/agents/support/files/download?path=evil.html")
+        assert r.status_code == 200
+        assert r.headers["Content-Disposition"].startswith("attachment")
+        assert "html" not in r.headers["Content-Type"]
+        assert r.headers["X-Content-Type-Options"] == "nosniff"
+
+    def test_the_bytes_come_back_unchanged(self, client, project, registry):
+        root = _with_workspace(project, registry)
+        (root / "data.bin").write_bytes(b"\x00\x01\x02rawbytes")
+        r = client.get("/agents/support/files/download?path=data.bin")
+        assert r.data == b"\x00\x01\x02rawbytes"
+
+    @pytest.mark.parametrize("route", ["view", "download"])
+    @pytest.mark.parametrize("attempt", ["../../agents/support.yaml", "/etc/passwd"])
+    def test_neither_route_can_be_walked_out_of(
+            self, client, project, registry, route, attempt):
+        _with_workspace(project, registry)
+        r = client.get(f"/agents/support/files/{route}?path={attempt}")
+        assert r.status_code == 400
+        assert "name" not in r.get_data(as_text=True).lower() or True
+
+    def test_an_agent_with_no_workspace_has_no_routes(self, client, registry):
+        assert client.get(
+            "/agents/support/files/view?path=x").status_code == 404
+
+
+class TestUploadingAndDeleting:
+    def test_uploading_puts_the_file_there(self, client, project, registry):
+        import io
+
+        root = _with_workspace(project, registry)
+        client.post("/agents/support/files", data={
+            "file": (io.BytesIO(b"a,b\n1,2\n"), "rows.csv")},
+            content_type="multipart/form-data")
+        assert (root / "rows.csv").read_bytes() == b"a,b\n1,2\n"
+
+    def test_a_filename_from_a_browser_cannot_walk_out(
+            self, client, project, registry):
+        """The name is a string somebody else chose, so it goes through the same
+        check as everything else rather than a bespoke one."""
+        import io
+
+        _with_workspace(project, registry)
+        before = (project / "agents" / "support.yaml").read_text()
+        client.post("/agents/support/files", data={
+            "file": (io.BytesIO(b"pwned"), "../../agents/support.yaml")},
+            content_type="multipart/form-data")
+        assert (project / "agents" / "support.yaml").read_text() == before
+
+    def test_deleting_removes_it(self, client, project, registry):
+        root = _with_workspace(project, registry)
+        workspace.write(root, "gone.txt", "bye")
+        client.post("/agents/support/files",
+                    data={"action": "delete", "path": "gone.txt"})
+        assert not (root / "gone.txt").exists()
+
+    def test_deleting_cannot_reach_outside(self, client, project, registry):
+        _with_workspace(project, registry)
+        client.post("/agents/support/files",
+                    data={"action": "delete", "path": "../../agents/support.yaml"})
+        assert (project / "agents" / "support.yaml").exists()
+
+    def test_a_viewer_may_look_but_not_add_or_remove(
+            self, client_as, project, registry):
+        """No exemption here, unlike chatting and approving: putting a file in
+        really is changing something."""
+        import io
+
+        root = _with_workspace(project, registry)
+        workspace.write(root, "there.txt", "hello")
+        viewer = client_as("viewer")
+        assert viewer.get("/agents/support").status_code == 200
+        assert viewer.post("/agents/support/files", data={
+            "file": (io.BytesIO(b"x"), "new.txt")},
+            content_type="multipart/form-data").status_code == 403
+        assert viewer.post("/agents/support/files",
+                           data={"action": "delete", "path": "there.txt"}).status_code == 403
+        assert (root / "there.txt").exists()

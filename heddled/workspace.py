@@ -118,6 +118,21 @@ def safe_path(root: Path, given: str, *, must_exist: bool = False) -> Path:
     return target
 
 
+def looks_like_text(path: Path) -> bool:
+    """Whether the built-in read tool could open this.
+
+    The console lists and downloads anything; an agent reads text. Marking the
+    difference in the listing closes a loop that would otherwise be discovered
+    by an operator dropping in a PDF and wondering why the agent says it cannot
+    read it.
+    """
+    try:
+        with path.open("rb") as fh:
+            return b"\0" not in fh.read(8000)
+    except OSError:
+        return False
+
+
 def listing(root: Path) -> list[dict]:
     """Every file in the workspace, nearest the top first.
 
@@ -142,6 +157,7 @@ def listing(root: Path) -> list[dict]:
             "path": str(path.relative_to(root)),
             "bytes": stat.st_size,
             "modified": stat.st_mtime,
+            "readable": looks_like_text(path),
         })
     return out
 
@@ -177,3 +193,40 @@ def write(root: Path, given: str, content: str) -> dict:
     path.write_bytes(encoded)
     return {"path": str(path.relative_to(root)), "bytes": len(encoded),
             "replaced": existed}
+
+
+def delete(root: Path, given: str) -> str:
+    """Remove one file. Deliberately not something an agent can do.
+
+    Overwriting is recoverable and deleting is not, so this is a person's
+    decision made on a screen with a confirmation — not a tool a model can
+    reach for. Empty folders left behind are tidied, because a workspace full
+    of empty directories is noise nobody asked for.
+    """
+    path = safe_path(root, given, must_exist=True)
+    path.unlink()
+    parent = path.parent
+    while parent != root and parent.is_dir() and not any(parent.iterdir()):
+        parent.rmdir()
+        parent = parent.parent
+    return given
+
+
+def store_upload(root: Path, filename: str, data: bytes) -> dict:
+    """Put a file somebody chose into the workspace.
+
+    The name comes from a browser and is therefore a string an attacker could
+    have chosen — `../../agents/support.yaml` included — so it goes through the
+    same check as everything else rather than a bespoke one.
+    """
+    name = Path(str(filename or "")).name          # drop any directory part
+    if not name or name in (".", ".."):
+        raise WorkspaceError("that file has no usable name")
+    if len(data) > MAX_WRITE_BYTES:
+        raise WorkspaceError(
+            f"that is {len(data) // 1024}KB, over the "
+            f"{MAX_WRITE_BYTES // 1024}KB limit for one file")
+    path = safe_path(root, name)
+    existed = path.is_file()
+    path.write_bytes(data)
+    return {"path": name, "bytes": len(data), "replaced": existed}

@@ -311,6 +311,23 @@ tool written by hand can still read whatever the process can; this makes the
 itself. Nor is there a shell, or network access, or any way for one agent to
 reach another's workspace.
 
+**Managed from the agent's own page.** The workspace is listed there with what
+is in it, and an operator can view a text file, download any file, add one, or
+delete one. Deleting is a person's decision on a screen with a confirmation and
+deliberately not a tool a model can reach for: overwriting is recoverable and
+deleting is not.
+
+Downloads are always `attachment`, with a content type that is not html and
+`nosniff`. This route serves whatever somebody put in the folder, from the
+origin that holds the administrator's session — served inline, an uploaded
+`.html` would run as a page on that origin. Uploaded names go through the same
+path check as everything else, because a filename from a browser is a string
+somebody else chose.
+
+Reading the panel is console access, which viewers already have. Adding and
+removing are writes, and the read-only rule covers them with no exemption —
+unlike chatting and approving, putting a file in really is changing something.
+
 One consequence to hold on to: an agent that reads untrusted files and also
 holds a consequential tool is a combination worth gating. Typed tools have been
 the ceiling on prompt injection — an email cannot make an agent do something it

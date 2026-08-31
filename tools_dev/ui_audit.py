@@ -26,7 +26,8 @@ PAGES = ["/", "/agents/support", "/agents/support/test", "/agents/new",
          # The surfaces that are not the console. They share this stylesheet, so
          # they are subject to the same measurements — and a page nobody audits
          # is where the contrast quietly goes wrong.
-         "/approvals", "/chat/support"]
+         "/approvals", "/chat/support",
+         "/agents/support/files/view?path=notes.txt"]
 
 JS = r"""
 () => {
@@ -211,10 +212,24 @@ JS = r"""
   });
 
   // Where am I? A nav with nothing marked current makes every page look alike.
-  const nav = document.querySelector('nav');
-  if (nav && nav.querySelectorAll('a').length > 2
-      && !nav.querySelector('[aria-current]')) {
-    ux.push('nav marks no current page with aria-current');
+  // Only site navigation. A <nav> whose links all point at the current path,
+  // differing by query string, is a list of things *on* this page — the chat
+  // page's conversations — and having none current is right when you are on a
+  // new one.
+  for (const nav of document.querySelectorAll('nav')) {
+    const links = [...nav.querySelectorAll('a[href]')];
+    if (links.length <= 2) continue;
+    const goesElsewhere = links.some(
+      a => new URL(a.href, location.href).pathname !== location.pathname);
+    // Only expect a current item when one of the destinations actually covers
+    // where we are. On an error page nothing does, and nothing should be lit.
+    const covers = links.some(a => {
+      const p = new URL(a.href, location.href).pathname;
+      return p !== '/' && location.pathname.startsWith(p);
+    });
+    if (goesElsewhere && covers && !nav.querySelector('[aria-current]')) {
+      ux.push('nav marks no current page with aria-current');
+    }
   }
 
   // Deleting without saying so.

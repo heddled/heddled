@@ -55,6 +55,7 @@ from ..runtime import (
     submit_message,
 )
 from ..store import Ephemeral, get_store
+from .. import workspace
 from ..worker import ensure_worker
 
 HERE = Path(__file__).parent
@@ -281,6 +282,20 @@ def create_app(start_worker: bool = True, dev: bool = False) -> Flask:
             return "—"
         return time.strftime("%Y-%m-%d %H:%M:%S", time.localtime(float(value)))
 
+    @app.template_filter("filesize")
+    def _filesize(value):
+        """Bytes below a kilobyte, because "0.0 KB" reads as an empty file when
+        it is a perfectly good one with 40 characters in it."""
+        try:
+            n = float(value)
+        except (TypeError, ValueError):
+            return ""
+        if n < 1024:
+            return f"{int(n)} bytes"
+        if n < 1024 * 1024:
+            return f"{n / 1024:.1f} KB"
+        return f"{n / (1024 * 1024):.1f} MB"
+
     @app.template_filter("clock")
     def _clock(value):
         if not value:
@@ -468,6 +483,20 @@ def register_console(app: Flask) -> None:
                                paging=paged, q=q, total_agents=len(registry.agents()),
                                **_deletion_notice())
 
+    def _workspace_listing(agent):
+        """What is in this agent's folder, or None if it has no workspace.
+
+        A misconfigured workspace — pointed at agents/, say — must not take the
+        whole agent page down with it; the panel says what is wrong instead.
+        """
+        if not getattr(agent, "workspace", None):
+            return None
+        try:
+            root = workspace.resolve_root(agent)
+        except workspace.WorkspaceError as exc:
+            return {"problem": str(exc)}
+        return {"root": str(root), "files": workspace.listing(root)}
+
     def _render_agent(name, status_code=200, **overrides):
         """Render the agent page, optionally with the text the author just
         submitted. A rejected save must never throw away their edit."""
@@ -496,6 +525,7 @@ def register_console(app: Flask) -> None:
             model_groups=model_groups(store),
             model_service=model_service(store, agent.model),
             unrepresentable=yamlio.unrepresentable(raw),
+            workspace_files=_workspace_listing(agent),
             sessions=store.list_sessions(agent=name, limit=15),
             latest_eval=evals.latest_run(name),
             trigger_rows=[t for t in triggers.trigger_status() if t["agent"] == name],
@@ -1879,6 +1909,83 @@ def register_api(app: Flask) -> None:
             by_tool=store.spend_by_tool("eur", since),
             today=store.spend_today("eur"), caps=caps,
         )
+
+    # ============================================================ workspace
+    #
+    # The operator's view of the folder an agent works in. Reading is console
+    # access, which viewers already have; putting files in and taking them out
+    # is a write, so the read-only rule covers it with no exemption — unlike
+    # chatting and approving, uploading really is changing something.
+
+    def _agent_workspace(name):
+        """The agent and its root, or 404 if it has not been given one."""
+        agent = get_registry().get_agent(name)
+        if not agent:
+            abort(404)
+        try:
+            root = workspace.resolve_root(agent)
+        except workspace.WorkspaceError:
+            abort(404)
+        if root is None:
+            abort(404)
+        return agent, root
+
+    @app.route("/agents/<name>/files/view")
+    def workspace_view(name):
+        agent, root = _agent_workspace(name)
+        given = request.args.get("path", "")
+        try:
+            content = workspace.read(root, given)
+        except workspace.WorkspaceError as exc:
+            return render_template("error.html", message=str(exc), code=400), 400
+        return render_template("workspace_view.html", agent=agent, path=given,
+                               content=content)
+
+    @app.route("/agents/<name>/files/download")
+    def workspace_download(name):
+        """Always an attachment, never rendered.
+
+        This serves whatever somebody put in the folder, from the console's own
+        origin — the origin holding the administrator's session. Served inline,
+        an uploaded .html would run as a page on that origin. So: a fixed
+        content type that is not html, `attachment`, and nosniff, which between
+        them leave the browser nothing to interpret.
+        """
+        agent, root = _agent_workspace(name)
+        given = request.args.get("path", "")
+        try:
+            path = workspace.safe_path(root, given, must_exist=True)
+        except workspace.WorkspaceError as exc:
+            return render_template("error.html", message=str(exc), code=400), 400
+        return Response(
+            path.read_bytes(),
+            mimetype="application/octet-stream",
+            headers={
+                "Content-Disposition":
+                    f'attachment; filename="{Path(given).name}"',
+                "X-Content-Type-Options": "nosniff",
+                "Content-Security-Policy": "default-src 'none'",
+            },
+        )
+
+    @app.route("/agents/<name>/files", methods=["POST"])
+    def workspace_change(name):
+        agent, root = _agent_workspace(name)
+        action = request.form.get("action")
+        try:
+            if action == "delete":
+                removed = workspace.delete(root, request.form.get("path", ""))
+                note = f"removed {removed}"
+            else:
+                upload = request.files.get("file")
+                if not upload or not upload.filename:
+                    raise workspace.WorkspaceError("no file chosen")
+                result = workspace.store_upload(root, upload.filename, upload.read())
+                note = (f"replaced {result['path']}" if result["replaced"]
+                        else f"added {result['path']}")
+        except workspace.WorkspaceError as exc:
+            return redirect(url_for("agent_detail", name=name, error=str(exc)))
+        return redirect(url_for("agent_detail", name=name, saved=note))
 
     # ======================================================= approvals inbox
     #

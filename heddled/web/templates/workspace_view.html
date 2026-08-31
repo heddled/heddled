@@ -1,0 +1,20 @@
+{% extends "base.html" %}
+{% block title %}{{ path }} · {{ agent.name }} · Heddled{% endblock %}
+{% block body %}
+
+<header class="page-head">
+  <h1><a href="/agents/{{ agent.name }}" class="crumb">{{ agent.name }}</a> /
+    <span class="mono">{{ path }}</span></h1>
+  <div class="page-actions">
+    <a class="btn" href="/agents/{{ agent.name }}/files/download?path={{ path | urlencode }}">Download</a>
+    <a class="btn" href="/agents/{{ agent.name }}">Back</a>
+  </div>
+</header>
+
+{#- Rendered as text by the template, never served as a document. Whatever is
+    in this file, the browser is given no chance to interpret it. -#}
+<section class="card">
+  <pre class="payload">{{ content }}</pre>
+</section>
+
+{% endblock %}
