@@ -123,6 +123,7 @@
 
 <script>
   window.CHAT_AGENT = {{ agent.name | tojson }};
+  window.CHAT_BASE = {{ ('/chat/' ~ agent.name) | tojson }};
   window.CHAT_SESSION = {{ (session_id or '') | tojson }};
   // Everything up to here is already on the page; the stream starts after it.
   window.CHAT_AFTER = {{ last_seq | default(0) | int }};

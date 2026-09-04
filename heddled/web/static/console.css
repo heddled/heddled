@@ -1440,3 +1440,64 @@ td.cap-cell { width: 130px; min-width: 130px; }
    baseline that neither of them respects. */
 .upload-row { align-items: center; gap: var(--s2); margin: var(--s3) 0 0; }
 .upload-row input[type="file"] { flex: 0 1 22rem; min-width: 0; }
+
+/* ----------------------------------------------------------------- Jarvis */
+/*
+   A conversation with what it is building beside it. The chat column reuses
+   `.chat-log`, `.chat-form` and `.bubble` wholesale — this is the same surface
+   in a different frame, and a second set of bubble styles would drift from the
+   first within a week.
+
+   Inside the console shell rather than standalone, unlike /chat: this screen is
+   admin-only, and losing the nav on the one page that spends money on its own
+   would be the wrong trade. */
+.jarvis-grid {
+  display: grid; grid-template-columns: minmax(0, 1fr) 320px;
+  gap: var(--s5); align-items: start;
+}
+.jarvis-chat {
+  display: flex; flex-direction: column; min-width: 0;
+  /* Tall enough to read a conversation in, short enough that the box stays on
+     screen. The nav and the page head are the rest of the viewport. */
+  height: calc(100vh - 190px); min-height: 420px;
+}
+.jarvis-chat .chat-log { padding: 4px 0 14px; }
+.jarvis-chat .chat-foot { text-align: left; }
+.jarvis-chat .chat-empty .banner { text-align: left; max-width: 52ch; }
+
+.jarvis-panel {
+  position: sticky; top: var(--s4); max-height: calc(100vh - 130px);
+  overflow-y: auto; border: 1px solid var(--line);
+  border-radius: var(--radius-box); background: var(--panel);
+  padding: var(--s3) var(--s4) var(--s4);
+}
+.panel-group + .panel-group { margin-top: var(--s5); padding-top: var(--s4);
+                              border-top: 1px solid var(--line); }
+.panel-group h2 {
+  font-size: 12px; text-transform: uppercase; letter-spacing: .06em;
+  color: var(--muted); margin: 0 0 var(--s2);
+}
+.panel-figure { font-size: 18px; font-weight: 600; margin: 0 0 var(--s2); }
+.panel-empty { color: var(--muted); font-size: 12.5px; margin: 0; }
+.panel-list { list-style: none; margin: 0; padding: 0;
+              display: flex; flex-direction: column; gap: var(--s3); }
+.panel-list > li { min-width: 0; }
+.panel-list p { margin: 2px 0 0; }
+.panel-row { display: flex; gap: var(--s2); align-items: baseline;
+             justify-content: space-between; }
+.panel-actions { display: flex; gap: var(--s2); flex-wrap: wrap; margin-top: var(--s2); }
+.panel-list summary { cursor: pointer; }
+.panel-list details[open] summary { margin-bottom: var(--s2); }
+.panel-list .payload { max-height: 220px; }
+
+.topup { display: flex; gap: var(--s2); align-items: center; margin-top: var(--s2); }
+.topup input { flex: 0 1 7rem; min-width: 0; }
+.pick-chat { max-width: 16rem; }
+
+@media (max-width: 900px) {
+  /* The panel goes under the conversation rather than beside it. Squeezed to
+     160px it was a column of ellipses. */
+  .jarvis-grid { grid-template-columns: 1fr; }
+  .jarvis-chat { height: auto; min-height: 60vh; }
+  .jarvis-panel { position: static; max-height: none; }
+}

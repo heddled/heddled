@@ -263,7 +263,7 @@ def sign_in(page) -> None:
         page.fill("#username", USER)
         page.fill("#password", PASSWORD)
     page.click("button[type=submit]")
-    page.wait_for_load_state("networkidle")
+    page.wait_for_load_state("load")
     if "/login" in page.url or "/setup" in page.url:
         sys.exit(f"could not sign in at {BASE} — audit would only measure /login")
 
@@ -322,7 +322,12 @@ def sweep(page, label: str) -> None:
     print(f"\n=================== {label} ===================")
     clean = True
     for path in PAGES:
-        page.goto(BASE + path, wait_until="networkidle")
+        # `load`, not `networkidle`: a screen with a live SSE stream never goes
+        # idle, so waiting for that timed out on the one page that has one
+        # rather than measuring it. The settle below is what `networkidle` was
+        # really being used for.
+        page.goto(BASE + path, wait_until="load")
+        page.wait_for_timeout(400)
         reveal(page)
         r = page.evaluate(JS)
         r["ux"] += keyboard_sweep(page, path)

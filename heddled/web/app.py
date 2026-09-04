@@ -1196,6 +1196,8 @@ def register_console(app: Flask) -> None:
             default_env=config.DEFAULT_ENV,
             jarvis_on=jarvis.enabled(store),
             jarvis_model=jarvis.model(store),
+            jarvis_budget=jarvis.default_budget(store),
+            jarvis_max_budget=jarvis.MAX_BUDGET_EUR,
             known_models=KNOWN_MODELS,
         )
 
@@ -1417,6 +1419,12 @@ def register_console(app: Flask) -> None:
         chosen = (request.form.get("model") or "").strip()
         if chosen:
             store.set_setting(jarvis.MODEL_SETTING, chosen)
+        try:
+            budget = float(request.form.get("budget") or 0)
+        except ValueError:
+            budget = 0
+        if 0 < budget <= jarvis.MAX_BUDGET_EUR:
+            store.set_setting(jarvis.BUDGET_SETTING, budget)
         return redirect(url_for("settings_screen") + "#jarvis")
 
     @app.route("/approve/<aid>")
@@ -1889,6 +1897,7 @@ def register_api(app: Flask) -> None:
             env=runtime_env(None),
         )
         return jsonify({"session_id": result["session_id"],
+                        "thread_id": result["session_id"],
                         "turn_id": result.get("turn_id")})
 
     @app.route("/spending")
@@ -2061,124 +2070,213 @@ def register_api(app: Flask) -> None:
         return redirect(url_for("approvals_inbox", done=result["status"]))
 
     # --- Jarvis ------------------------------------------------------------
-
-    #: What a run's status means, in the words somebody reading the screen
-    #: needs. The stored word never changes; only the reading of it.
-    RUN_WORDS = {
-        "running": "working",
-        "done": "finished",
-        "spent": "out of budget",
-        "stopped": "stopped by you",
-        "waiting": "waiting for approval",
-        "failed": "stopped with a problem",
-        "discarded": "discarded",
-    }
-
-    #: How each outcome should read at a glance. Worked out here rather than in
-    #: the template: a Jinja conditional listing status names inside a class
-    #: attribute is both unreadable and indistinguishable, to anything scanning
-    #: the templates, from four classes the stylesheet does not have.
-    RUN_TONES = {
-        "running": "status running", "done": "ok", "failed": "bad",
-        "spent": "warn", "waiting": "warn", "stopped": "warn",
-    }
-
-    def _run_view(row) -> dict:
-        spent = jarvis.spend(row["id"])
-        budget = float(row["budget_eur"])
-        return {
-            "id": row["id"],
-            "goal": row["goal"],
-            "status": row["status"],
-            "tone": RUN_TONES.get(row["status"], ""),
-            "in_words": RUN_WORDS.get(row["status"], row["status"]),
-            "live": row["status"] == "running",
-            "budget": budget,
-            "spent": spent,
-            "spent_pct": min(100, round(spent / budget * 100)) if budget else 0,
-            "steps": row["steps"],
-            "max_steps": row["max_steps"],
-            "session_id": row["session_id"],
-            "note": row["note"],
-            "started_by": row["started_by"],
-            "created_at": row["created_at"],
-            "ended_at": row["ended_at"],
-        }
-
-    # Off unless somebody turns it on in Settings, and admin-only either way
-    # (see auth.ADMIN_WRITE_PREFIXES). Every route starts by checking both, so
-    # turning the setting off closes the door rather than only hiding the tab.
+    #
+    # A conversation with the thing that builds, and a panel of what it has
+    # built beside it. Off unless somebody turns it on in Settings, and
+    # admin-only either way (auth.ADMIN_WRITE_PREFIXES). Every route starts by
+    # checking the setting, so turning it off closes the door rather than only
+    # hiding the tab.
 
     def _jarvis_on():
         if not jarvis.enabled(get_store()):
             abort(404)
 
+    def _jarvis_chat_or_404(chat_id: str):
+        row = jarvis.get_chat(chat_id)
+        if not row:
+            abort(404)
+        return row
+
+    def _panel() -> dict:
+        """Everything Jarvis has, for the panel. Not scoped to the open
+        conversation: what it built last week is still what it has."""
+        have = jarvis.inventory()
+        promoted = set(get_registry().agents())
+        for agent in have["agents"]:
+            agent["promoted"] = agent["name"] in promoted
+        promoted_tools = set(get_registry().tools())
+        for tool in have["tools"]:
+            tool["promoted"] = tool["name"] in promoted_tools
+        return have
+
     @app.route("/jarvis")
     def jarvis_screen():
         _jarvis_on()
-        rows = [_run_view(r) for r in jarvis.runs()]
+        who = (getattr(g, "user", None) or {}).get("username")
+        chat_id = request.args.get("chat")
+        chat, history, last_seq = None, [], 0
+        if chat_id:
+            chat = _jarvis_chat_or_404(chat_id)
+            history, last_seq = _chat_history(chat["session_id"])
+        threads = [{"id": c["id"], "title": c["goal"], "updated_at": c["created_at"],
+                    "status": c["status"]} for c in jarvis.chats()]
         return render_template(
-            "jarvis.html", runs=rows, model=jarvis.model(),
-            max_budget=jarvis.MAX_BUDGET_EUR, max_steps=jarvis.MAX_STEPS,
-            problem=request.args.get("problem"), done=request.args.get("done"))
+            "jarvis.html", chat=chat, chat_id=chat_id, threads=threads,
+            history=history, last_seq=last_seq, panel=_panel(),
+            session_id=(chat["session_id"] if chat else ""),
+            budget=(jarvis.budget_state(chat_id) if chat_id else None),
+            default_budget=jarvis.default_budget(), model=jarvis.model(),
+            who=who, problem=request.args.get("problem"),
+            done=request.args.get("done"))
 
-    @app.route("/jarvis", methods=["POST"])
-    def jarvis_start():
+    @app.route("/jarvis/panel")
+    def jarvis_panel():
+        """The panel on its own, so the page can refresh it when a turn ends
+        without reloading the conversation out from under you."""
+        _jarvis_on()
+        chat_id = request.args.get("chat")
+        return render_template(
+            "_jarvis_panel.html", panel=_panel(), chat_id=chat_id,
+            budget=(jarvis.budget_state(chat_id) if chat_id else None))
+
+    @app.route("/jarvis/messages", methods=["POST"])
+    def jarvis_send():
         _jarvis_on()
         who = (getattr(g, "user", None) or {}).get("username") or "console"
+        body = request.get_json(silent=True) or {}
+        text = (body.get("text") or "").strip()
+        if not text:
+            return {"error": "say something first"}, 400
+
+        chat_id = body.get("chat_id") or None
+        if chat_id:
+            chat = jarvis.get_chat(chat_id)
+            if not chat:
+                return {"error": "that conversation is gone"}, 404
+        else:
+            # The first message names the conversation. Nobody wants to fill in
+            # a title field before they have said what they want.
+            chat_id = jarvis.start_chat(text, who)
+            chat = jarvis.get_chat(chat_id)
+
+        # The budget is the only rail on a conversation, so it is checked before
+        # the turn rather than noticed after it. Refusing here is what makes
+        # topping up a decision rather than a formality.
+        state = jarvis.budget_state(chat_id)
+        if state["spent_up"]:
+            return {"error": f"This conversation has used its €{state['budget']:.2f}. "
+                             "Top it up in the panel to carry on.",
+                    "chat_id": chat_id, "budget": state}, 402
+        if chat["steps"] >= chat["max_steps"]:
+            return {"error": "This conversation has gone on long enough to be worth "
+                             "starting again. Open a new one — what it built is "
+                             "still there.", "chat_id": chat_id}, 409
+
+        # Written before every turn: the memory index is part of the
+        # instructions and changes as it learns.
+        jarvis.write_driver()
+        jarvis.record_turn(chat_id)
+        result = submit_message(
+            jarvis.DRIVER, text, session_id=chat["session_id"],
+            channel=jarvis.CHANNEL, sender=who,
+            origin={"kind": jarvis.CHANNEL, "chat": chat_id, "who": who},
+        )
+        return jsonify({"session_id": result["session_id"], "chat_id": chat_id,
+                        "thread_id": chat_id, "turn_id": result.get("turn_id")})
+
+    @app.route("/jarvis/stream/<sid>")
+    def jarvis_stream(sid):
+        """Spine events for one conversation, plus the token deltas. The same
+        shape as the chat stream, over a session this screen owns."""
+        _jarvis_on()
+        store = get_store()
+        session = store.get_session(sid)
+        if not session or session["channel"] != jarvis.CHANNEL:
+            abort(404)
+        watcher_id = (getattr(g, "user", None) or {}).get("id")
+        resume = request.headers.get("Last-Event-ID") or request.args.get("after", 0)
         try:
-            run_id = jarvis.start_run(request.form.get("goal", ""),
-                                      request.form.get("budget"),
-                                      request.form.get("steps"), who)
-        except ValueError as exc:
-            return redirect(url_for("jarvis_screen", problem=str(exc)))
-        return redirect(url_for("jarvis_run_screen", run_id=run_id))
+            after = int(resume)
+        except (TypeError, ValueError):
+            after = 0
 
-    @app.route("/jarvis/<run_id>")
-    def jarvis_run_screen(run_id):
-        _jarvis_on()
-        row = jarvis.get_run(run_id)
-        if not row:
-            abort(404)
-        # Every step it took is an ordinary turn on the ordinary session, so
-        # the trace already has a screen — this one links to it rather than
-        # growing a second, worse copy of it.
-        return render_template(
-            "jarvis_run.html", run=_run_view(row), made=jarvis.made(run_id),
-            problem=request.args.get("problem"), done=request.args.get("done"))
+        def generate():
+            q: queue.Queue = queue.Queue(maxsize=1000)
+            store.subscribe(q)
+            try:
+                for ev in store.events_for_session(sid, after_seq=after):
+                    yield _sse(ev)
+                last_ping = last_check = time.time()
+                while True:
+                    try:
+                        item = q.get(timeout=5)
+                        if item.session_id == sid:
+                            if isinstance(item, Ephemeral):
+                                yield (f"event: {item.kind}\n"
+                                       f"data: {json.dumps(item.payload)}\n\n")
+                            else:
+                                yield _sse(item)
+                    except queue.Empty:
+                        pass
+                    now = time.time()
+                    if watcher_id and now - last_check > 30:
+                        last_check = now
+                        if not auth.still_allowed(store, watcher_id):
+                            return
+                    if now - last_ping > 15:
+                        last_ping = now
+                        yield ": ping\n\n"
+            finally:
+                store.unsubscribe(q)
 
-    @app.route("/jarvis/<run_id>/stop", methods=["POST"])
-    def jarvis_stop(run_id):
-        _jarvis_on()
-        jarvis.stop_run(run_id)
-        return redirect(url_for("jarvis_run_screen", run_id=run_id, done="stopped"))
+        return Response(
+            stream_with_context(generate()),
+            mimetype="text/event-stream",
+            headers={"Cache-Control": "no-cache", "X-Accel-Buffering": "no",
+                     "Connection": "keep-alive"},
+        )
 
-    @app.route("/jarvis/<run_id>/discard", methods=["POST"])
-    def jarvis_discard(run_id):
-        _jarvis_on()
-        if not jarvis.get_run(run_id):
-            abort(404)
-        what = jarvis.discard(run_id)
-        return redirect(url_for(
-            "jarvis_run_screen", run_id=run_id,
-            done=f"discarded {len(what['agents'])} agent(s) and "
-                 f"{len(what['tools'])} tool(s)"))
+    def _back_to(chat_id: str, **words):
+        """Back to the conversation you were in. Deliberately built from the
+        chat id rather than from a `back` field in the form — a redirect target
+        a form can name is a redirect target an attacker can name."""
+        return redirect(url_for("jarvis_screen", chat=chat_id or None, **words))
 
-    @app.route("/jarvis/<run_id>/promote", methods=["POST"])
-    def jarvis_promote(run_id):
-        """The one door between Jarvis's tree and the operator's, and a signed-in
-        administrator pressing a button is the only thing that opens it."""
+    @app.route("/jarvis/promote", methods=["POST"])
+    def jarvis_promote():
+        """The one door between Jarvis's tree and the operator's, and a
+        signed-in administrator pressing a button is the only thing that opens
+        it."""
         _jarvis_on()
-        if not jarvis.get_run(run_id):
-            abort(404)
+        chat_id = request.form.get("chat") or ""
         try:
             path = jarvis.promote(request.form.get("kind", ""),
                                   request.form.get("name", ""))
         except ValueError as exc:
-            return redirect(url_for("jarvis_run_screen", run_id=run_id,
-                                    problem=str(exc)))
-        return redirect(url_for("jarvis_run_screen", run_id=run_id,
-                                done=f"promoted — it is now {path}"))
+            return _back_to(chat_id, problem=str(exc))
+        return _back_to(chat_id, done=f"promoted — it is now {path}")
+
+    @app.route("/jarvis/remove", methods=["POST"])
+    def jarvis_remove():
+        _jarvis_on()
+        kind, name = request.form.get("kind", ""), request.form.get("name", "")
+        chat_id = request.form.get("chat") or ""
+        try:
+            jarvis.remove(kind, name)
+        except ValueError as exc:
+            return _back_to(chat_id, problem=str(exc))
+        return _back_to(chat_id, done=f"deleted the {kind} {name}")
+
+    @app.route("/jarvis/<chat_id>/budget", methods=["POST"])
+    def jarvis_budget(chat_id):
+        _jarvis_on()
+        _jarvis_chat_or_404(chat_id)
+        try:
+            total = jarvis.top_up(chat_id, request.form.get("extra"))
+        except ValueError as exc:
+            return redirect(url_for("jarvis_screen", chat=chat_id, problem=str(exc)))
+        return redirect(url_for("jarvis_screen", chat=chat_id,
+                                done=f"this conversation can now spend €{total:.2f}"))
+
+    @app.route("/jarvis/<chat_id>/discard", methods=["POST"])
+    def jarvis_discard(chat_id):
+        _jarvis_on()
+        _jarvis_chat_or_404(chat_id)
+        what = jarvis.discard(chat_id)
+        return redirect(url_for(
+            "jarvis_screen",
+            done=f"discarded {len(what['agents'])} agent(s) and "
+                 f"{len(what['tools'])} tool(s)"))
 
     @app.route("/chat/<name>/report", methods=["POST"])
     def chat_report(name):

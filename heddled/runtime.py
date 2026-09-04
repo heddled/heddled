@@ -34,8 +34,27 @@ class AgentNotFound(LookupError):
     pass
 
 
-def _agent_or_raise(name: str, env: str = None):
-    agent = resolve_agent(name, env)
+def registry_for(channel: str = None):
+    """Which registry a turn on this channel resolves its agents and tools in.
+
+    Almost always the operator's. The exception is Jarvis, which works in a tree
+    of its own: a turn on its channel must find its agents there and must never
+    find the operator's, or the separation the whole feature rests on would be
+    one shared lookup away from nothing.
+
+    Gated on the setting as well as the channel, so an instance with Jarvis
+    switched off cannot reach that tree by any route at all.
+    """
+    if channel == "jarvis":
+        from . import jarvis
+
+        if jarvis.enabled():
+            return jarvis.registry()
+    return get_registry()
+
+
+def _agent_or_raise(name: str, env: str = None, channel: str = None):
+    agent = resolve_agent(name, env, channel)
     if not agent:
         raise AgentNotFound(f"no agent named '{name}' in {config.AGENTS_DIR}")
     return agent
@@ -57,7 +76,7 @@ def inbound_env(asked: str = None) -> str:
     return env if env in config.ENVIRONMENTS else "dev"
 
 
-def resolve_agent(name: str, env: str = None):
+def resolve_agent(name: str, env: str = None, channel: str = None):
     """The definition a run in this environment should use.
 
     `dev` is the working file — editing an agent and immediately trying it is
@@ -65,8 +84,12 @@ def resolve_agent(name: str, env: str = None):
     published to it, which is what makes publishing mean something: editing an
     agent no longer silently changes what production is running.
     """
-    live = get_registry().get_agent(name)
+    live = registry_for(channel).get_agent(name)
     if not env or env == "dev":
+        return live
+    if channel == "jarvis":
+        # Jarvis's agents are never published anywhere, so there is no version
+        # to pin and nothing to look up. The file is the definition.
         return live
 
     store = get_store()
@@ -90,9 +113,14 @@ def resolve_agent(name: str, env: str = None):
 def start_session(agent_name: str, channel: str = "webchat", origin: dict = None,
                   env: str = "dev", parent_session_id: str = None,
                   call_chain: list = None) -> str:
-    agent = _agent_or_raise(agent_name, env)
+    agent = _agent_or_raise(agent_name, env, channel)
     store = get_store()
-    store.record_agent_version(agent)
+    if channel != "jarvis":
+        # Versions back the Publish screen, which is about the operator's
+        # estate. A Jarvis agent is never published anywhere — it is promoted
+        # or it is deleted — so recording one there would put a thing nobody
+        # can deploy into the list of things you deploy.
+        store.record_agent_version(agent)
     return store.create_session(
         agent=agent.name,
         agent_version=agent.version,
@@ -124,7 +152,7 @@ def submit_message(
     `sync=True` blocks until the turn ends or pauses — used by the CLI, by
     agents-as-tools, and by the MCP endpoint.
     """
-    agent = _agent_or_raise(agent_name, env)
+    agent = _agent_or_raise(agent_name, env, channel)
     store = get_store()
 
     origin = dict(origin or {"kind": channel})
@@ -219,6 +247,13 @@ def _engine_for(agent, session_id: str, turn_id: str, channel: str) -> TurnEngin
     origin = json.loads(session["trigger_origin"] or "{}") if session else {}
     caller = origin.get("caller")
     kwargs = dict(channel=channel, call_chain=call_chain, caller=caller)
+    namespace = registry_for(channel)
+    if namespace is not get_registry():
+        # The same tree the agent came from. An engine resolving its tools in
+        # the operator's registry would hand a Jarvis agent the operator's
+        # tools. Passed only when it differs, so a Level 3 engine that took the
+        # documented arguments and no more still loads.
+        kwargs["registry"] = namespace
     if agent.handler:
         # Level 3: a custom turn engine. Same events, same adapters, same
         # policies — the platform can't tell the difference.
@@ -274,17 +309,35 @@ def _session_env(session_id: str) -> str:
 
 
 def _run_turn_job(payload: dict) -> TurnResult:
-    agent = _agent_or_raise(payload["agent"], _session_env(payload["session_id"]))
-    engine = _engine_for(agent, payload["session_id"], payload["turn_id"],
-                         payload.get("channel", "webchat"))
+    channel = payload.get("channel", "webchat")
+    _mark_jarvis_chat(channel, payload["session_id"])
+    agent = _agent_or_raise(payload["agent"], _session_env(payload["session_id"]),
+                            channel)
+    engine = _engine_for(agent, payload["session_id"], payload["turn_id"], channel)
     return engine.run(payload["text"], origin=payload.get("origin"),
                       sender=payload.get("sender"))
 
 
+def _mark_jarvis_chat(channel: str, session_id: str) -> None:
+    """Tell this worker thread which Jarvis conversation it is running, so what
+    gets built is stamped with it. Read off the session rather than taken from
+    the job payload: the conversation a turn belongs to is not something the
+    model or the caller gets to assert."""
+    if channel != "jarvis":
+        return
+    from . import jarvis
+
+    session = get_store().get_session(session_id)
+    origin = json.loads(session["trigger_origin"] or "{}") if session else {}
+    jarvis.set_current_chat(origin.get("chat"))
+
+
 def _resume_turn_job(payload: dict) -> TurnResult:
-    agent = _agent_or_raise(payload["agent"], _session_env(payload["session_id"]))
-    engine = _engine_for(agent, payload["session_id"], payload["turn_id"],
-                         payload.get("channel", "webchat"))
+    channel = payload.get("channel", "webchat")
+    _mark_jarvis_chat(channel, payload["session_id"])
+    agent = _agent_or_raise(payload["agent"], _session_env(payload["session_id"]),
+                            channel)
+    engine = _engine_for(agent, payload["session_id"], payload["turn_id"], channel)
     return engine.resume()
 
 

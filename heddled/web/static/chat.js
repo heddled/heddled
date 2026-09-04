@@ -97,8 +97,19 @@ function renderMd(src) {
 
 // ------------------------------------------------------------------- page
 
+// Two surfaces use this: the chat page a colleague is given, and the Jarvis
+// screen an administrator builds on. They differ in where they post and what
+// the thread in the address bar is called, and in nothing else — so those are
+// the only two things parameterised. A second copy of the markdown renderer
+// and the dedupe was the alternative, and one of the copies would have rotted.
+const BASE = window.CHAT_BASE || `/chat/${encodeURIComponent(window.CHAT_AGENT)}`;
+const THREAD_PARAM = window.CHAT_THREAD_PARAM || 'session';
+const CAN_REPORT = window.CHAT_REPORT !== false;
+const PANEL = window.CHAT_PANEL || null;
+
 const AGENT = window.CHAT_AGENT;
 let sessionId = window.CHAT_SESSION || null;
+let threadId = window.CHAT_THREAD || null;
 let stream = null, live = null, steps = null;
 
 const log = document.getElementById('chat');
@@ -170,6 +181,7 @@ function addCopy(el) {
 // test, which is the only reliable way tests about real behaviour ever get
 // written — the alternative is somebody curating them later from memory.
 function addReport(el) {
+  if (!CAN_REPORT) return;
   const meta = el.parentElement.querySelector('.turn-meta');
   if (!meta || meta.querySelector('.report-reply')) return;
   const btn = document.createElement('button');
@@ -187,7 +199,7 @@ function addReport(el) {
     btn.disabled = true;
     btn.textContent = 'Saving…';
     try {
-      const r = await fetch(`/chat/${encodeURIComponent(AGENT)}/report`, {
+      const r = await fetch(`${BASE}/report`, {
         method: 'POST', headers: {'content-type': 'application/json'},
         body: JSON.stringify({session_id: sessionId, note})
       });
@@ -247,8 +259,7 @@ function connect(sid) {
   if (stream) stream.close();
   const after = Number(window.CHAT_AFTER) || 0;
   stream = new EventSource(
-    `/chat/${encodeURIComponent(AGENT)}/stream/${encodeURIComponent(sid)}`
-    + `?after=${after}`);
+    `${BASE}/stream/${encodeURIComponent(sid)}?after=${after}`);
 
   stream.addEventListener('tool.called', (e) => {
     const payload = JSON.parse(e.data).payload || {};
@@ -302,7 +313,11 @@ function connect(sid) {
     busy(false);
   });
 
-  stream.addEventListener('turn.completed', () => { clearSteps(); busy(false); });
+  stream.addEventListener('turn.completed', () => {
+    clearSteps();
+    busy(false);
+    refreshPanel();
+  });
 
   stream.addEventListener('error.raised', (e) => {
     const payload = JSON.parse(e.data).payload || {};
@@ -327,9 +342,9 @@ form.addEventListener('submit', async (e) => {
 
   let response, body;
   try {
-    response = await fetch(`/chat/${encodeURIComponent(AGENT)}/messages`, {
+    response = await fetch(`${BASE}/messages`, {
       method: 'POST', headers: {'content-type': 'application/json'},
-      body: JSON.stringify({text, session_id: sessionId})
+      body: JSON.stringify({text, session_id: sessionId, chat_id: threadId})
     });
     body = await response.json();
   } catch (err) {
@@ -346,10 +361,23 @@ form.addEventListener('submit', async (e) => {
   }
   if (!sessionId) {
     sessionId = body.session_id;
-    history.replaceState(null, '', `?session=${sessionId}`);
+    threadId = body.thread_id || sessionId;
+    history.replaceState(null, '', `?${THREAD_PARAM}=${encodeURIComponent(threadId)}`);
     connect(sessionId);
   }
 });
+
+// What it has built, refreshed when a turn ends rather than reloaded with the
+// page — a panel that only updates on F5 is a panel you stop believing.
+async function refreshPanel() {
+  if (!PANEL) return;
+  const target = document.getElementById('jarvis-panel');
+  if (!target) return;
+  try {
+    const r = await fetch(PANEL + (threadId ? `?chat=${encodeURIComponent(threadId)}` : ''));
+    if (r.ok) target.innerHTML = await r.text();
+  } catch (err) { /* the panel is a convenience; the conversation is the page */ }
+}
 
 // Enter sends, Shift+Enter makes a new line, and the box grows to fit rather
 // than scrolling a single line out of sight.

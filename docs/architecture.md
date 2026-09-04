@@ -220,19 +220,19 @@ The spine is exportable as OTLP traces — one trace per session, one span per t
 
 ## Jarvis
 
-Off unless `jarvis_enabled` is set, admin-only either way, and deliberately the opposite of everything above: an autonomous loop that writes its own tools, writes its own agents, runs them, and continues until it declares itself finished or a budget or step cap stops it. `heddled/jarvis.py`.
+Off unless `jarvis_enabled` is set, admin-only either way, and deliberately the opposite of everything above: you talk to it and it writes its own tools, writes its own agents, and runs them. `heddled/jarvis.py`.
 
-The unit is a **run** — one goal, one required budget, one required step cap, recorded in `jarvis_runs`. Each step is an ordinary `TurnEngine.run`, so a run reads in Activity like any other session and needs no separate audit surface.
+The unit is a **conversation**, recorded in `jarvis_runs`. Each message is an ordinary turn on the ordinary spine — `submit_message` on the `jarvis` channel, streamed over SSE by the same client that drives `/chat` — so a conversation reads in Activity like any other session and needs no separate audit surface. There is no autonomous loop and no step cap: a person answers every turn. The budget is the rail, checked before a turn rather than noticed after one, and it counts every session started underneath the conversation (a recursive CTE on `parent_session_id`) so `run_own_agent` cannot spend against a total that never moves.
 
 Three fences carry it:
 
-- **Its own tree.** `jarvis/agents`, `jarvis/tools`, `jarvis/work`, read through a second `Registry` passed into `TurnEngine(registry=…)`. The operator's `agents/` and `tools/` are a different directory that nothing in the module holds a path to — "it cannot edit your policies" is structural, not a rule it is asked to follow. Agent files are assembled field by field rather than written from what the model hands over, so `workspace`, `policies` and `triggers` have no path in at all.
+- **Its own tree.** `jarvis/agents`, `jarvis/tools`, `jarvis/memory`, `jarvis/work`, read through a second `Registry`. `runtime.registry_for(channel)` is the single place that decides, gated on the setting as well as the channel, and `_engine_for` passes the same registry into the turn so an agent and its tools always come from one tree. The operator's `agents/` and `tools/` are a different directory nothing in the module holds a path to — "it cannot edit your policies" is structural, not a rule it is asked to follow. Agent files are assembled field by field rather than written from what the model hands over, so `workspace`, `policies` and `triggers` have no path in at all: **Jarvis cannot write a schedule**, because a trigger means running with nobody there.
 - **Reading and invoking, never writing.** `ask_agent` runs one of the operator's agents through `runtime.submit_message` on the `jarvis` channel; every policy, approval gate and budget on that agent still applies, and `deny_channels: [jarvis]` refuses it by name.
-- **Promotion.** `promote(kind, name)` copies one thing into the operator's estate and refuses to overwrite an existing file, so an agent named `support` cannot become yours by being pressed. `sandboxed: true` deliberately survives promotion. `discard(run)` deletes everything a run made that was not promoted.
+- **Promotion.** `promote(kind, name)` copies one thing into the operator's estate and refuses to overwrite an existing file, so an agent named `support` cannot become yours by being pressed. `sandboxed: true` survives promotion; so does `made_by`, which is what lets the panel show which schedules you later put on its work. `discard(chat)` deletes everything a conversation made that was not promoted.
+
+**Memory** is `jarvis/memory/<name>.md`, one file per fact, with `name` and `description` in front matter. `memory_index()` carries only the summaries into the instructions — `write_driver()` regenerates them before every turn, and writes only on a real change so the agent does not gain a version per message — and `recall` reads a body on demand. No separate index file, because an index kept alongside what it indexes is an index that drifts.
 
 Python Jarvis writes is marked `sandboxed: true`, which routes `Tool.load_handler()` to `heddled/sandbox.py`: a child process under `python -I` with a scrubbed environment (no `os.environ`, so no provider keys), `RLIMIT_AS`/`CPU`/`FSIZE`/`NOFILE` set by the child on itself before the handler is imported, the workspace as its working directory, and a NUL-marked JSON result so anything the handler prints cannot be mistaken for the answer. It is a strong seatbelt around code a model wrote — not a namespace, not seccomp, and not a network boundary.
-
-Spend is summed over the run's session *and every session started underneath it* (a recursive CTE on `parent_session_id`), or the loop could spend the afternoon inside `run_own_agent` against a budget that never moved.
 
 ## CLI
 

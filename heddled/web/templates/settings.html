@@ -168,17 +168,25 @@
           {% for m in known_models %}<option value="{{ m }}">{% endfor %}
         </datalist>
       </div>
+      <div class="setting-row">
+        <label for="jarvis_budget">What a new conversation may spend, in euros
+          <span class="mono small muted">jarvis_budget_eur</span></label>
+        <input id="jarvis_budget" name="budget" type="number" step="0.50"
+               min="0.50" max="{{ jarvis_max_budget }}" value="{{ jarvis_budget }}">
+      </div>
     </div>
     <div class="row"><button class="btn" type="submit">Save</button></div>
   </form>
   <p class="hint"><b>What it can and cannot reach.</b> It writes only into
     <code>jarvis/</code> — your own <code>agents/</code> and <code>tools/</code>
-    are a different tree it holds no path to. It may <em>ask</em> your agents, on
-    the <code>jarvis</code> channel, and their policies and approvals still apply;
-    it can never change them. Python it writes runs in a child process with no
-    keys, no store and no way back in. Nothing it makes reaches your estate until
-    you promote it by hand, and a run you discard takes everything it made with
-    it. Every run needs a budget and a step cap before it starts.</p>
+    are a different tree it holds no path to, and it cannot write a schedule at
+    all. It may <em>ask</em> your agents, on the <code>jarvis</code> channel, and
+    their policies and approvals still apply; it can never change them. Python it
+    writes runs in a child process with no keys, no store and no way back in.
+    Nothing it makes is yours until you say so, and discarding a conversation
+    takes everything it made with it. It keeps notes as Markdown in
+    <code>jarvis/memory/</code>, which you can read and delete beside the
+    conversation.</p>
 </section>
 
 <section class="card">
