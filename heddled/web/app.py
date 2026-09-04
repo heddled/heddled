@@ -1200,6 +1200,7 @@ def register_console(app: Flask) -> None:
             jarvis_max_budget=jarvis.MAX_BUDGET_EUR,
             jarvis_steps=jarvis.max_steps(store),
             jarvis_max_steps_ceiling=jarvis.MAX_STEPS_CEILING,
+            jarvis_schedule_budget=jarvis.schedule_budget(store),
             known_models=KNOWN_MODELS,
         )
 
@@ -1433,6 +1434,14 @@ def register_console(app: Flask) -> None:
             steps = 0
         if 0 < steps <= jarvis.MAX_STEPS_CEILING:
             store.set_setting(jarvis.STEPS_SETTING, steps)
+        try:
+            # Zero is meaningful here and must be storable: it is how you say
+            # "nothing of Jarvis's ever runs unattended".
+            sched = float(request.form.get("schedule_budget"))
+        except (TypeError, ValueError):
+            sched = None
+        if sched is not None and 0 <= sched <= jarvis.MAX_BUDGET_EUR:
+            store.set_setting(jarvis.SCHEDULE_BUDGET_SETTING, sched)
         return redirect(url_for("settings_screen") + "#jarvis")
 
     @app.route("/approve/<aid>")
@@ -2105,6 +2114,14 @@ def register_api(app: Flask) -> None:
         promoted_tools = set(get_registry().tools())
         for tool in have["tools"]:
             tool["promoted"] = tool["name"] in promoted_tools
+        # Jarvis's own schedules run unattended, so the panel shows them beside
+        # the ones the operator set, and says what is left in today's budget.
+        have["own_schedules"] = jarvis.own_schedules()
+        have["schedule_budget"] = {
+            "cap": jarvis.schedule_budget(),
+            "spent": jarvis.schedule_spend_today(),
+            "affordable": jarvis.schedules_affordable(),
+        }
         return have
 
     @app.route("/jarvis")
@@ -2126,6 +2143,32 @@ def register_api(app: Flask) -> None:
             default_budget=jarvis.default_budget(), model=jarvis.model(),
             who=who, problem=request.args.get("problem"),
             done=request.args.get("done"))
+
+    @app.route("/jarvis/agent/<name>")
+    def jarvis_look_agent(name):
+        """Read an agent Jarvis made, before deciding whether to take it.
+
+        Promotion asks you to vouch for something. Without this the only way to
+        do that was to open a terminal and find the file, which made "read it
+        before you trust it" advice nobody could follow.
+        """
+        _jarvis_on()
+        thing = jarvis.agent_files(name)
+        if not thing:
+            abort(404)
+        return render_template("jarvis_look.html", thing=thing,
+                               chat_id=request.args.get("chat", ""),
+                               promoted=name in get_registry().agents())
+
+    @app.route("/jarvis/tool/<name>")
+    def jarvis_look_tool(name):
+        _jarvis_on()
+        thing = jarvis.tool_files(name)
+        if not thing:
+            abort(404)
+        return render_template("jarvis_look.html", thing=thing,
+                               chat_id=request.args.get("chat", ""),
+                               promoted=name in get_registry().tools())
 
     @app.route("/jarvis/panel")
     def jarvis_panel():
@@ -2264,6 +2307,20 @@ def register_api(app: Flask) -> None:
         except ValueError as exc:
             return _back_to(chat_id, problem=str(exc))
         return _back_to(chat_id, done=f"deleted the {kind} {name}")
+
+    @app.route("/jarvis/unschedule", methods=["POST"])
+    def jarvis_unschedule():
+        """Stop one of Jarvis's agents running on its own. Deliberately its own
+        route rather than a corner of `remove`: stopping a schedule and deleting
+        an agent are very different amounts of damage."""
+        _jarvis_on()
+        name = request.form.get("name", "")
+        chat_id = request.form.get("chat") or ""
+        try:
+            jarvis.unschedule(name)
+        except ValueError as exc:
+            return _back_to(chat_id, problem=str(exc))
+        return _back_to(chat_id, done=f"{name} no longer runs on its own")
 
     @app.route("/jarvis/<chat_id>/budget", methods=["POST"])
     def jarvis_budget(chat_id):

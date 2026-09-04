@@ -50,6 +50,7 @@ SETTING = "jarvis_enabled"
 MODEL_SETTING = "jarvis_model"
 BUDGET_SETTING = "jarvis_budget_eur"
 STEPS_SETTING = "jarvis_max_steps"
+SCHEDULE_BUDGET_SETTING = "jarvis_schedule_budget_eur"
 DEFAULT_MODEL = "mock/echo"
 DEFAULT_BUDGET_EUR = 5.0
 MAX_BUDGET_EUR = 100.0
@@ -69,6 +70,12 @@ MAX_TURNS = 200
 #: seeing it work in stretches is most of the point of a conversation.
 DEFAULT_MAX_STEPS = 8
 MAX_STEPS_CEILING = 40
+
+#: What everything Jarvis runs on a schedule may spend between them in a day.
+#: A conversation has you in it; a schedule does not, so this is the only thing
+#: standing between `* * * * *` and a surprise. When it is used up, nothing of
+#: Jarvis's fires again until tomorrow.
+DEFAULT_SCHEDULE_BUDGET_EUR = 5.0
 
 #: The agent you are talking to. It is the only one with the builder tools: an
 #: agent Jarvis makes is an ordinary agent and does not get to make more of
@@ -101,6 +108,36 @@ def max_steps(store=None) -> int:
     except (TypeError, ValueError):
         return DEFAULT_MAX_STEPS
     return max(1, min(value, MAX_STEPS_CEILING))
+
+
+def schedule_budget(store=None) -> float:
+    stored = (store or get_store()).get_setting(SCHEDULE_BUDGET_SETTING)
+    if stored is None:
+        return DEFAULT_SCHEDULE_BUDGET_EUR
+    try:
+        value = float(stored)
+    except (TypeError, ValueError):
+        return DEFAULT_SCHEDULE_BUDGET_EUR
+    return min(value, MAX_BUDGET_EUR) if value >= 0 else DEFAULT_SCHEDULE_BUDGET_EUR
+
+
+def schedule_spend_today(store=None) -> float:
+    """What Jarvis's own schedules have cost today, across every agent of its
+    own. Counted by session origin rather than by agent name, so an agent it
+    renames or replaces cannot start the day's total again."""
+    store = store or get_store()
+    return float(store.one(
+        "SELECT COALESCE(SUM(l.amount),0) t FROM ledger l"
+        " JOIN sessions s ON s.id = l.session_id"
+        " WHERE l.kind='eur' AND l.day=?"
+        "   AND s.channel=? AND s.trigger_origin LIKE '%\"kind\": \"schedule\"%'",
+        (time.strftime("%Y-%m-%d"), CHANNEL))["t"])
+
+
+def schedules_affordable(store=None) -> bool:
+    store = store or get_store()
+    cap = schedule_budget(store)
+    return cap > 0 and schedule_spend_today(store) < cap
 
 
 def default_budget(store=None) -> float:
@@ -349,13 +386,82 @@ def inventory() -> dict:
             "schedules": schedules()}
 
 
+def agent_files(name: str) -> dict:
+    """Everything there is to read about an agent Jarvis made.
+
+    Promotion asks you to vouch for something; without this the only way to do
+    that was to open a terminal. `read it before you trust it` has to be
+    something the screen actually lets you do.
+    """
+    definition = agents_dir() / f"{name}.yaml"
+    if not definition.is_file():
+        return {}
+    reg = registry()
+    agent = reg.get_agent(name)
+    notes = definition.with_suffix(".md")
+    return {
+        "name": name,
+        "kind": "agent",
+        "description": agent.description if agent else "",
+        "made_in": ((agent.raw.get(MADE_BY) if agent else "") or "").replace("chat: ", ""),
+        "model": agent.model if agent else "",
+        "tools": sorted(agent.tool_names) if agent else [],
+        "schedules": [t.raw for t in (agent.triggers if agent else [])
+                      if t.kind == "schedule"],
+        "files": [
+            {"path": definition.name, "body": definition.read_text(encoding="utf-8")},
+            *([{"path": notes.name, "body": notes.read_text(encoding="utf-8")}]
+              if notes.is_file() else []),
+        ],
+    }
+
+
+def tool_files(name: str) -> dict:
+    """The same for a tool — including the Python, which is the whole point of
+    being able to look before you take it."""
+    folder = tools_dir() / name
+    manifest = folder / "tool.yaml"
+    if not manifest.is_file():
+        return {}
+    tool = registry().tools().get(name)
+    files = [{"path": "tool.yaml", "body": manifest.read_text(encoding="utf-8")}]
+    handler = folder / "handler.py"
+    if handler.is_file():
+        files.append({"path": "handler.py",
+                      "body": handler.read_text(encoding="utf-8")})
+    return {
+        "name": name,
+        "kind": "tool",
+        "description": tool.description if tool else "",
+        "made_in": ((tool.raw.get(MADE_BY) if tool else "") or "").replace("chat: ", ""),
+        "python": bool(tool and tool.raw.get("sandboxed")),
+        "type": (tool.raw.get("type") if tool else "") or "",
+        "files": files,
+    }
+
+
+def own_schedules() -> list[dict]:
+    """Schedules on Jarvis's own agents. These fire unattended, in Jarvis's
+    tree, against the day's schedule budget."""
+    out = []
+    for name, agent in sorted(registry().agents().items()):
+        if name == DRIVER:
+            continue
+        for trigger in agent.triggers or []:
+            if trigger.kind != "schedule":
+                continue
+            out.append({"agent": name, "cron": trigger.raw.get("schedule"),
+                        "message": trigger.raw.get("message") or "Scheduled run.",
+                        "mine": True})
+    return out
+
+
 def schedules() -> list[dict]:
     """Schedules on things that came from Jarvis and were promoted.
 
-    Jarvis cannot write one — a trigger means running with nobody there, and
-    that stays your decision, made on the agent's own page after you have read
-    what it does. This lists the ones you decided on, so the panel shows what is
-    actually firing rather than implying Jarvis arranged it.
+    Distinct from `own_schedules`: these run in the operator's estate under
+    their rules, and are listed only because provenance survives promotion — so
+    the panel can show what its work ended up doing once it was taken.
     """
     from . import story
     from .registry import get_registry
@@ -377,6 +483,16 @@ def made(chat_id: str) -> dict:
     have = inventory()
     return {"agents": [a for a in have["agents"] if a["made_in"] == chat_id],
             "tools": [t for t in have["tools"] if t["made_in"] == chat_id]}
+
+
+def unschedule(name: str) -> None:
+    """Stop one of Jarvis's agents running on its own, leaving the agent alone."""
+    path = agents_dir() / f"{name}.yaml"
+    if not path.is_file():
+        raise ValueError(f"'{name}' is not one of Jarvis's agents.")
+    data = yamlio.load(path.read_text(encoding="utf-8"))
+    data.pop("triggers", None)
+    path.write_text(yamlio.dump(data), encoding="utf-8")
 
 
 def remove(kind: str, name: str) -> None:
@@ -504,7 +620,12 @@ How to work:
    can, and say so plainly if there is none: "I have no way to send mail, and
    you have no agent that can either — give one an email action and I can ask
    it." That is a more useful answer than a list of your limitations.
-6. Use `remember` when you learn something worth having next time — how their
+6. `make_schedule` puts one of your agents on a cron so it runs on its own.
+   Only do this when they ask for it, only after `run_own_agent` showed the
+   agent works, and no more often than the job needs — nobody is watching a
+   scheduled run, and everything you schedule shares one small daily budget.
+   Say plainly what you scheduled and when it will fire.
+7. Use `remember` when you learn something worth having next time — how their
    systems are shaped, what they prefer, what turned out to be a dead end. Not
    a diary: the conversation is already recorded. One fact per note.
 
@@ -661,6 +782,88 @@ def _refuse_secrets(manifest: dict) -> None:
             "that already has one.")
 
 
+#: How often a schedule may fire. A cron is cheap to write and expensive to
+#: run: `* * * * *` is 1440 unattended turns a day, and the operator finds out
+#: from the bill. The daily budget is the real rail; this is the guard that
+#: stops one typo eating it before anybody looks.
+MIN_MINUTES_BETWEEN_RUNS = 15
+
+
+def _check_cron(expr: str) -> str:
+    from datetime import datetime
+
+    from .triggers import cron_matches
+
+    expr = " ".join(str(expr or "").split())
+    try:
+        cron_matches(expr, datetime.now())
+    except ValueError as exc:
+        raise ValueError(f"That is not a cron expression Heddled understands: {exc}")
+
+    # Count what it would do in an hour rather than parsing the minute field by
+    # hand — `*/7`, `0,15,30,45` and `*` all have to be caught, and the parser
+    # already knows how.
+    from datetime import timedelta
+
+    start = datetime(2026, 1, 5, 0, 0)
+    hits = sum(1 for i in range(60 * 24)
+               if cron_matches(expr, start + timedelta(minutes=i)))
+    if hits == 0:
+        # `99 * * * *` parses and simply never matches, so without this Jarvis
+        # writes a schedule, reports it as done, and nothing ever happens.
+        raise ValueError(
+            f"'{expr}' is a cron that never comes round — check the field "
+            "ranges (minute 0-59, hour 0-23, day 1-31, month 1-12, weekday 0-6).")
+    if hits > (24 * 60) / MIN_MINUTES_BETWEEN_RUNS:
+        raise ValueError(
+            f"'{expr}' would run {hits} times a day, which is more often than "
+            f"every {MIN_MINUTES_BETWEEN_RUNS} minutes. Nobody is watching a "
+            "scheduled run, so make it less frequent.")
+    return expr
+
+
+def _make_schedule(args, ctx) -> dict:
+    """Give one of its own agents a schedule.
+
+    Deliberately a separate tool rather than a field on `make_agent`: a
+    schedule means running with nobody there, and it should take a decision to
+    add one rather than falling out of the same call that made the agent.
+    """
+    name = str(args.get("agent") or "")
+    if name == DRIVER:
+        raise ValueError(
+            "You cannot schedule yourself. You hold the tools that write agents "
+            "and tools, and a schedule on you means those run with nobody there.")
+    reg = registry()
+    agent = reg.get_agent(name)
+    if not agent:
+        raise ValueError(f"'{name}' is not one of the agents you made.")
+
+    expr = _check_cron(args.get("cron"))
+    message = str(args.get("message") or "").strip()
+    if not message:
+        raise ValueError("Say what the agent should be asked when it fires.")
+
+    path = agents_dir() / f"{name}.yaml"
+    data = yamlio.load(path.read_text(encoding="utf-8"))
+    data["triggers"] = [{"schedule": expr, "message": message}]
+    path.write_text(yamlio.dump(data), encoding="utf-8")
+    ctx.log(f"scheduled {name}: {expr}")
+    return {"agent": name, "cron": expr, "scheduled": True}
+
+
+def _remove_schedule(args, ctx) -> dict:
+    name = str(args.get("agent") or "")
+    path = agents_dir() / f"{name}.yaml"
+    if not path.is_file():
+        raise ValueError(f"'{name}' is not one of the agents you made.")
+    data = yamlio.load(path.read_text(encoding="utf-8"))
+    had = bool(data.pop("triggers", None))
+    path.write_text(yamlio.dump(data), encoding="utf-8")
+    ctx.log(f"unscheduled {name}" if had else f"{name} had no schedule")
+    return {"agent": name, "removed": had}
+
+
 def _list_agents(args, ctx) -> dict:
     from .registry import get_registry
 
@@ -798,6 +1001,28 @@ BUILDERS = {
         }, "required": ["name", "message"]},
         {"reply": "string"},
         _ask_agent),
+    "make_schedule": (
+        "Give one of the agents you made a schedule, so it runs on its own. It "
+        "fires unattended in your tree against a daily budget the operator "
+        "sets — so make it no more often than the job actually needs, and only "
+        "once you have tried the agent and know it works.",
+        {"type": "object", "properties": {
+            "agent": {"type": "string", "description": "One of the agents you made."},
+            "cron": {"type": "string",
+                     "description": "Five-field cron, e.g. '0 8 * * 1-5' for "
+                                    "weekday mornings. No more often than every "
+                                    "15 minutes."},
+            "message": {"type": "string",
+                        "description": "What to ask the agent each time it fires."},
+        }, "required": ["agent", "cron", "message"]},
+        {"agent": "string", "cron": "string", "scheduled": "boolean"},
+        _make_schedule),
+    "remove_schedule": (
+        "Stop one of your agents running on its own.",
+        {"type": "object", "properties": {"agent": {"type": "string"}},
+         "required": ["agent"]},
+        {"agent": "string", "removed": "boolean"},
+        _remove_schedule),
     "remember": (
         "Keep a note for next time — one fact per note, written so it still "
         "makes sense in a month. Writing a note that already exists replaces "

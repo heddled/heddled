@@ -1,0 +1,96 @@
+{% extends "base.html" %}
+{% block title %}{{ thing.name }} · Jarvis · Heddled{% endblock %}
+{% block body %}
+
+{#- Read-only on purpose. Editing what Jarvis made in your own console would be
+    a second way for its tree to become a thing you maintain; the two moves that
+    matter are taking it and deleting it. Edit it after you have taken it, on the
+    ordinary page, where the ordinary rules apply. -#}
+
+<header class="page-head">
+  <h1><a href="/jarvis{{ '?chat=' ~ chat_id if chat_id }}" class="crumb">Jarvis</a>
+    / {{ thing.name }}</h1>
+  <div class="page-actions">
+    {% if promoted %}
+    <a class="btn tiny" href="/{{ 'agents' if thing.kind == 'agent' else 'tools' }}/{{ thing.name }}">Open yours</a>
+    {% else %}
+    <form method="post" action="/jarvis/promote" class="inline">
+      <input type="hidden" name="kind" value="{{ thing.kind }}">
+      <input type="hidden" name="name" value="{{ thing.name }}">
+      <input type="hidden" name="chat" value="{{ chat_id }}">
+      <button class="btn tiny primary" type="submit">Make it mine</button>
+    </form>
+    {% endif %}
+    <form method="post" action="/jarvis/remove" class="inline"
+          data-confirm="Delete the {{ thing.kind }} {{ thing.name }} from Jarvis's tree?">
+      <input type="hidden" name="kind" value="{{ thing.kind }}">
+      <input type="hidden" name="name" value="{{ thing.name }}">
+      <input type="hidden" name="chat" value="{{ chat_id }}">
+      <button class="btn tiny danger" type="submit">Delete</button>
+    </form>
+  </div>
+</header>
+
+<p class="lede">{{ thing.description or "No description." }}</p>
+
+<div class="row">
+  <span class="badge">{{ thing.kind }}</span>
+  {% if thing.type %}<span class="badge">{{ thing.type }}</span>{% endif %}
+  {% if thing.python %}<span class="badge warn">python</span>{% endif %}
+  {% if promoted %}<span class="badge ok">already yours</span>{% endif %}
+</div>
+{#- A sentence, not a row of chips: "that conversation" is a link you read, and
+    a bare inline link floating in a flex row is neither prose nor a control. -#}
+<p class="muted small">
+  {% if thing.model %}Thinks with <code>{{ thing.model }}</code>.{% endif %}
+  {% if thing.made_in %}
+  Built in <a href="/jarvis?chat={{ thing.made_in }}">the conversation that made it</a>.
+  {% endif %}
+</p>
+
+{% if thing.python %}
+<p class="banner warn"><b>This is code a model wrote.</b> Read
+  <code>handler.py</code> below before you take it. It runs in a child process
+  with no API keys, no access to the record and no way back into Heddled — and
+  it keeps running that way after you take it, because taking it means you want
+  it, not that a person wrote it.</p>
+{% endif %}
+
+{% if thing.kind == 'agent' %}
+<section class="card">
+  <h2>What it may do</h2>
+  {% if thing.tools %}
+  <div class="row">
+    {% for t in thing.tools %}
+    <a class="badge mono" href="/jarvis/tool/{{ t }}{{ '?chat=' ~ chat_id if chat_id }}">{{ t }}</a>
+    {% endfor %}
+  </div>
+  <p class="hint">These are Jarvis's tools, not yours. Taking the agent does not
+    take them — make each one yours as well, or it will arrive with actions it
+    cannot reach.</p>
+  {% else %}
+  <p class="muted">Nothing. It answers from its instructions alone.</p>
+  {% endif %}
+
+  {% if thing.schedules %}
+  <h2>When it runs on its own</h2>
+  <ul class="plain">
+    {% for sc in thing.schedules %}
+    <li><code>{{ sc.schedule }}</code> — {{ sc.schedule | cron_words }}
+      <span class="muted small">asks: {{ sc.message or 'Scheduled run.' }}</span></li>
+    {% endfor %}
+  </ul>
+  <p class="hint">This fires with nobody watching, in Jarvis's tree, against the
+    day's schedule budget. Taking the agent brings the schedule with it — after
+    which it runs in <em>your</em> estate, under your rules.</p>
+  {% endif %}
+</section>
+{% endif %}
+
+{% for f in thing.files %}
+<section class="card">
+  <h2 class="mono">{{ f.path }}</h2>
+  <pre class="payload">{{ f.body }}</pre>
+</section>
+{% endfor %}
+{% endblock %}

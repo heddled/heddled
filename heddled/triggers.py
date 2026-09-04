@@ -116,12 +116,14 @@ def tick(now: datetime = None) -> int:
     now = now or datetime.now()
     store = get_store()
     fired = 0
-    for agent in get_registry().agents().values():
+    for agent, channel in _scheduled_agents(store):
         for trigger in agent.triggers:
             try:
                 if trigger.kind == "schedule":
-                    fired += _maybe_fire_schedule(store, agent, trigger, now)
+                    fired += _maybe_fire_schedule(store, agent, trigger, now, channel)
                 elif trigger.kind == "poll":
+                    # Jarvis cannot write a poller — it has no tool for one —
+                    # so this only ever runs for the operator's own agents.
                     fired += _maybe_fire_poll(store, agent, trigger)
             except Exception as exc:
                 store.set_cursor(
@@ -131,18 +133,49 @@ def tick(now: datetime = None) -> int:
     return fired
 
 
-def _maybe_fire_schedule(store, agent, trigger, now: datetime) -> int:
+def _scheduled_agents(store):
+    """Every agent whose triggers this pass should consider, with the channel
+    its runs belong on.
+
+    Jarvis's agents live in a different tree and must keep running there: the
+    `jarvis` channel is what routes a turn to its registry and strips the
+    operator's credentials out of what its tools can see. A scheduled Jarvis run
+    on the `schedule` channel would resolve against the operator's estate, which
+    is the one thing the whole feature is built to prevent.
+    """
+    from . import jarvis
+
+    out = [(a, "schedule") for a in get_registry().agents().values()]
+    if not jarvis.enabled(store):
+        return out
+    if not jarvis.schedules_affordable(store):
+        # Nobody is watching these. When the day's budget is gone they simply
+        # do not fire, rather than failing one turn at a time inside the engine.
+        store.set_cursor("jarvis:schedules", {
+            "held": "the day's schedule budget is used up",
+            "spent": jarvis.schedule_spend_today(store), "at": time.time()})
+        return out
+    store.set_cursor("jarvis:schedules", {"held": None, "at": time.time()})
+    for name, agent in jarvis.registry().agents().items():
+        if name != jarvis.DRIVER:      # never the one holding the builders
+            out.append((agent, jarvis.CHANNEL))
+    return out
+
+
+def _maybe_fire_schedule(store, agent, trigger, now: datetime,
+                        channel: str = "schedule") -> int:
     expr = trigger.raw.get("schedule")
     if not expr or not cron_matches(expr, now):
         return 0
     minute_key = now.strftime("%Y-%m-%dT%H:%M")
-    cursor_key = f"schedule:{agent.name}:{trigger.key}"
+    cursor_key = f"schedule:{channel}:{agent.name}:{trigger.key}"
     if store.get_cursor(cursor_key) == minute_key:
         return 0  # already fired this minute
     store.set_cursor(cursor_key, minute_key)
     store.enqueue(
         "schedule_trigger",
-        {"agent": agent.name, "trigger": trigger.raw, "at": minute_key, "cron": expr},
+        {"agent": agent.name, "trigger": trigger.raw, "at": minute_key,
+         "cron": expr, "channel": channel},
     )
     return 1
 
@@ -173,6 +206,10 @@ def run_schedule_trigger(payload: dict) -> None:
         reason=f"cron {payload.get('cron')} at {payload.get('at')}",
         origin_extra={"cron": payload.get("cron"), "fired_at": payload.get("at")},
         env=inbound_env(trigger.get("env")),
+        # What started it and where it runs are different questions: the origin
+        # still says `schedule`, so the trace reads the same, while the channel
+        # decides which tree the agent comes from.
+        channel=payload.get("channel", "schedule"),
     )
 
 

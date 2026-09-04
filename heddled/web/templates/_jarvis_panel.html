@@ -92,8 +92,9 @@
         </summary>
         <p class="panel-note panel-full">{{ a.description }}</p>
         <div class="panel-do">
+          <a class="btn tiny" href="/jarvis/agent/{{ a.name }}?chat={{ chat_id or '' }}">Look inside</a>
           {% if a.promoted %}
-          <a class="btn tiny" href="/agents/{{ a.name }}">Open it</a>
+          <a class="btn tiny" href="/agents/{{ a.name }}">Open yours</a>
           {% else %}
           <form method="post" action="/jarvis/promote" class="inline">
             <input type="hidden" name="kind" value="agent">
@@ -132,8 +133,9 @@
         </summary>
         <p class="panel-note panel-full">{{ t.description }}</p>
         <div class="panel-do">
+          <a class="btn tiny" href="/jarvis/tool/{{ t.name }}?chat={{ chat_id or '' }}">Look inside</a>
           {% if t.promoted %}
-          <a class="btn tiny" href="/tools/{{ t.name }}">Open it</a>
+          <a class="btn tiny" href="/tools/{{ t.name }}">Open yours</a>
           {% else %}
           <form method="post" action="/jarvis/promote" class="inline">
             <input type="hidden" name="kind" value="tool">
@@ -163,21 +165,55 @@
   {% endif %}
 {% endcall %}
 
-{% call section('schedules', 'Schedules', panel.schedules | length) %}
-  {% if panel.schedules %}
+{% call section('schedules', 'Runs on its own',
+                (panel.own_schedules | length) + (panel.schedules | length)) %}
+  {% if panel.own_schedules or panel.schedules %}
+  {% if panel.schedule_budget %}
+  <p class="hint">Nobody is watching these. Everything Jarvis runs on a schedule
+    shares €{{ '%.2f' | format(panel.schedule_budget.cap) }} a day —
+    €{{ '%.2f' | format(panel.schedule_budget.spent) }} used.
+    {% if not panel.schedule_budget.affordable %}
+    <b>Used up: nothing of Jarvis's fires again until tomorrow.</b>
+    {% endif %}</p>
+  {% endif %}
   <ul class="panel-list">
+    {% for s in panel.own_schedules %}
+    <li class="panel-item" data-find="{{ s.agent }} {{ s.cron }} {{ s.message }}">
+      <details>
+        <summary>
+          <span class="panel-name">{{ s.agent }}</span>
+          <span class="panel-note">{{ s.cron | cron_words }}</span>
+        </summary>
+        <p class="panel-note panel-full">Asks it: {{ s.message }}</p>
+        <div class="panel-do">
+          <a class="btn tiny" href="/jarvis/agent/{{ s.agent }}?chat={{ chat_id or '' }}">Look inside</a>
+          <form method="post" action="/jarvis/unschedule" class="inline"
+                data-confirm="Stop {{ s.agent }} running on its own?">
+            <input type="hidden" name="name" value="{{ s.agent }}">
+            <input type="hidden" name="chat" value="{{ chat_id or '' }}">
+            <button class="btn tiny danger" type="submit">Stop it</button>
+          </form>
+        </div>
+      </details>
+    </li>
+    {% endfor %}
     {% for s in panel.schedules %}
     <li class="panel-item" data-find="{{ s.agent }} {{ s.words }}">
-      <div class="panel-row">
-        <span class="panel-name"><a href="/agents/{{ s.agent }}">{{ s.agent }}</a></span>
-      </div>
-      <p class="panel-note">{{ s.words }}</p>
+      <details>
+        <summary>
+          <span class="panel-name">{{ s.agent }}</span>
+          <span class="badge ok">yours</span>
+          <span class="panel-note">{{ s.words }}</span>
+        </summary>
+        <div class="panel-do">
+          <a class="btn tiny" href="/agents/{{ s.agent }}">Open yours</a>
+        </div>
+      </details>
     </li>
     {% endfor %}
   </ul>
   {% else %}
-  <p class="panel-empty">None. Jarvis cannot write one — a schedule means
-    running with nobody there, so it stays your decision. Take one of its
-    agents, then add a schedule on that agent's own page.</p>
+  <p class="panel-empty">None. Ask Jarvis to put one of its agents on a
+    schedule once you have read what it does.</p>
   {% endif %}
 {% endcall %}

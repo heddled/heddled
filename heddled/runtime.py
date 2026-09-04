@@ -472,16 +472,23 @@ def inject_operator_message(session_id: str, text: str, operator: str = "operato
 
 
 def fire_trigger(agent_name: str, kind: str, message: str, reason: str,
-                 origin_extra: dict = None, env: str = "dev") -> dict:
+                 origin_extra: dict = None, env: str = "dev",
+                 channel: str = None) -> dict:
     """Common path for schedule and poll triggers: `trigger.fired` is the first
-    event of the session, so a scheduled run is as traceable as a user one."""
-    agent = _agent_or_raise(agent_name)
+    event of the session, so a scheduled run is as traceable as a user one.
+
+    `channel` defaults to `kind` and differs only for Jarvis, whose scheduled
+    runs must resolve in its own tree — what started a turn and where it runs
+    are two questions, and only here do they have different answers.
+    """
+    channel = channel or kind
+    agent = _agent_or_raise(agent_name, env, channel)
     store = get_store()
     origin = {"kind": kind, "reason": reason, **(origin_extra or {})}
     session_id = store.create_session(
         agent=agent.name,
         agent_version=agent.version,
-        channel=kind,
+        channel=channel,
         trigger_origin=origin,
         env=env,
     )
@@ -495,8 +502,8 @@ def fire_trigger(agent_name: str, kind: str, message: str, reason: str,
         )
     )
     result = submit_message(
-        agent.name, message, session_id=session_id, channel=kind, origin=origin, env=env,
-        sender=kind,
+        agent.name, message, session_id=session_id, channel=channel, origin=origin,
+        env=env, sender=kind,
     )
     return result
 

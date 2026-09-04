@@ -404,6 +404,261 @@ class TestSchedules:
         assert jarvis.schedules() == []
 
 
+def _jarvis_jobs(store) -> list:
+    """Scheduled jobs belonging to Jarvis. The starter `support` agent has a
+    weekday-morning cron of its own, so "no jobs at all" would pass for the
+    wrong reason at 08:00 on a Monday."""
+    import json
+
+    return [json.loads(j["payload"])
+            for j in store.query("SELECT * FROM jobs WHERE kind='schedule_trigger'")
+            if json.loads(j["payload"]).get("channel") == jarvis.CHANNEL]
+
+
+class TestSchedulingItsOwnAgents:
+    """It can now put its own agents on a cron, which means they run with nobody
+    watching. Everything here is about what stops that being a surprise."""
+
+    def _schedule(self, agent="summariser", cron="0 8 * * 1-5", message="go"):
+        return jarvis._make_schedule(
+            {"agent": agent, "cron": cron, "message": message}, Ctx())
+
+    def test_it_can_schedule_an_agent_it_made(self, store, chat):
+        make_agent("summariser")
+        assert self._schedule()["scheduled"] is True
+        agent = jarvis.registry().get_agent("summariser")
+        assert [t.raw["schedule"] for t in agent.triggers] == ["0 8 * * 1-5"]
+
+    def test_it_cannot_schedule_itself(self, store, chat):
+        """It holds the tools that write agents and tools. A cron on the driver
+        is the whole feature running unattended."""
+        jarvis.write_driver()
+        with pytest.raises(ValueError, match="cannot schedule yourself"):
+            self._schedule(agent=jarvis.DRIVER)
+
+    def test_it_cannot_schedule_the_operators_agents(self, store, registry, chat):
+        with pytest.raises(ValueError, match="not one of the agents you made"):
+            self._schedule(agent="support")
+        assert not jarvis.schedules()
+
+    def test_nonsense_cron_is_refused(self, store, chat):
+        make_agent("summariser")
+        for bad in ("every morning", "0 8 * *", "99 * * * *"):
+            with pytest.raises(ValueError):
+                self._schedule(cron=bad)
+
+    def test_running_every_minute_is_refused(self, store, chat):
+        """A cron is cheap to write and expensive to run: `* * * * *` is 1440
+        unattended turns a day and the operator finds out from the bill."""
+        make_agent("summariser")
+        with pytest.raises(ValueError, match="more often than"):
+            self._schedule(cron="* * * * *")
+        with pytest.raises(ValueError, match="more often than"):
+            self._schedule(cron="*/5 * * * *")
+        assert self._schedule(cron="*/30 * * * *")["scheduled"] is True
+
+    def test_a_schedule_needs_something_to_ask(self, store, chat):
+        make_agent("summariser")
+        with pytest.raises(ValueError, match="what the agent should be asked"):
+            self._schedule(message="  ")
+
+    def test_make_agent_still_cannot_smuggle_one_in(self, store, chat):
+        """Scheduling stays a separate, deliberate act rather than a field that
+        falls out of the same call that made the agent."""
+        make_agent("sneaky", triggers=[{"schedule": "* * * * *"}])
+        assert jarvis.registry().get_agent("sneaky").triggers == []
+
+    def test_it_can_stop_one(self, store, chat):
+        make_agent("summariser")
+        self._schedule()
+        assert jarvis._remove_schedule({"agent": "summariser"}, Ctx())["removed"] is True
+        assert jarvis.own_schedules() == []
+
+    def test_stopping_a_schedule_leaves_the_agent_alone(self, store, chat):
+        make_agent("summariser")
+        self._schedule()
+        jarvis.unschedule("summariser")
+        assert (jarvis.agents_dir() / "summariser.yaml").is_file()
+        assert jarvis.registry().get_agent("summariser") is not None
+
+
+class TestTheScheduleBudget:
+    """The only thing between a cron and a surprise, since nobody is watching."""
+
+    def test_the_default_applies(self, store):
+        assert jarvis.schedule_budget(store) == jarvis.DEFAULT_SCHEDULE_BUDGET_EUR
+        assert jarvis.schedules_affordable(store) is True
+
+    def test_zero_means_nothing_of_its_own_ever_fires(self, store):
+        """The off switch, and it has to be storable — which `or DEFAULT` would
+        have quietly turned back on."""
+        store.set_setting(jarvis.SCHEDULE_BUDGET_SETTING, 0)
+        assert jarvis.schedule_budget(store) == 0
+        assert jarvis.schedules_affordable(store) is False
+
+    def test_spend_counts_only_its_own_unattended_runs(self, store):
+        """A conversation has you in it and draws on the conversation's budget;
+        this total is about the runs nobody is watching."""
+        scheduled = store.create_session(
+            agent="summariser", channel=jarvis.CHANNEL,
+            trigger_origin={"kind": "schedule", "cron": "0 8 * * *"})
+        chatted = store.create_session(
+            agent=jarvis.DRIVER, channel=jarvis.CHANNEL,
+            trigger_origin={"kind": "jarvis", "chat": "j_1"})
+        theirs = store.create_session(
+            agent="support", channel="schedule",
+            trigger_origin={"kind": "schedule"})
+        for sid in (scheduled, chatted, theirs):
+            store.record_spend(agent="x", session_id=sid, kind="eur", amount=1.0)
+        assert jarvis.schedule_spend_today(store) == pytest.approx(1.0)
+
+    def test_it_stops_being_affordable_once_used_up(self, store):
+        store.set_setting(jarvis.SCHEDULE_BUDGET_SETTING, 1.0)
+        sid = store.create_session(agent="summariser", channel=jarvis.CHANNEL,
+                                   trigger_origin={"kind": "schedule"})
+        store.record_spend(agent="x", session_id=sid, kind="eur", amount=1.0)
+        assert jarvis.schedules_affordable(store) is False
+
+
+class TestScheduledRunsStayInTheirTree:
+    def test_the_tick_finds_its_agents(self, store, registry, chat):
+        from datetime import datetime
+
+        from heddled import triggers
+
+        store.set_setting(jarvis.SETTING, True)
+        make_agent("summariser")
+        jarvis._make_schedule({"agent": "summariser", "cron": "0 8 * * *",
+                               "message": "go"}, Ctx())
+        triggers.tick(datetime(2026, 1, 5, 8, 0))
+        mine = _jarvis_jobs(store)
+        assert [j["agent"] for j in mine] == ["summariser"]
+
+    def test_it_does_not_fire_when_the_budget_is_gone(self, store, registry, chat):
+        from datetime import datetime
+
+        from heddled import triggers
+
+        store.set_setting(jarvis.SETTING, True)
+        store.set_setting(jarvis.SCHEDULE_BUDGET_SETTING, 0)
+        make_agent("summariser")
+        jarvis._make_schedule({"agent": "summariser", "cron": "0 8 * * *",
+                               "message": "go"}, Ctx())
+        triggers.tick(datetime(2026, 1, 5, 8, 0))
+        assert _jarvis_jobs(store) == []
+
+    def test_nothing_of_its_fires_when_jarvis_is_off(self, store, registry, chat):
+        from datetime import datetime
+
+        from heddled import triggers
+
+        make_agent("summariser")
+        jarvis._make_schedule({"agent": "summariser", "cron": "0 8 * * *",
+                               "message": "go"}, Ctx())
+        store.set_setting(jarvis.SETTING, False)
+        triggers.tick(datetime(2026, 1, 5, 8, 0))
+        assert _jarvis_jobs(store) == []
+
+    def test_the_driver_is_never_scheduled_even_if_a_file_says_so(self, store, chat):
+        """Belt as well as braces: the tool refuses, and the tick refuses again
+        for anything that reached the file another way."""
+        from datetime import datetime
+
+        from heddled import triggers
+
+        store.set_setting(jarvis.SETTING, True)
+        jarvis.write_driver()
+        path = jarvis.agents_dir() / f"{jarvis.DRIVER}.yaml"
+        data = yamlio.load(path.read_text())
+        data["triggers"] = [{"schedule": "0 8 * * *", "message": "build things"}]
+        path.write_text(yamlio.dump(data))
+        triggers.tick(datetime(2026, 1, 5, 8, 0))
+        assert _jarvis_jobs(store) == []
+
+    def test_a_scheduled_run_resolves_in_the_jarvis_tree(self, store, registry, chat):
+        """The channel is what routes it. On `schedule` it would look for
+        `summariser` in the operator's estate and run with their credentials."""
+        from heddled import runtime
+
+        store.set_setting(jarvis.SETTING, True)
+        make_agent("summariser")
+        assert runtime.resolve_agent("summariser", channel=jarvis.CHANNEL) is not None
+        assert runtime.resolve_agent("summariser", channel="schedule") is None
+
+    def test_the_operators_own_schedules_are_untouched(self, store, registry):
+        """`support` has one, and it must still fire the way it always did."""
+        from datetime import datetime
+
+        from heddled import triggers
+
+        store.set_setting(jarvis.SETTING, True)
+        triggers.tick(datetime(2026, 1, 5, 8, 0))
+        import json
+        jobs = [json.loads(j["payload"])
+                for j in store.query("SELECT * FROM jobs WHERE kind='schedule_trigger'")]
+        assert any(j["agent"] == "support" and j["channel"] == "schedule" for j in jobs)
+
+
+class TestLookingInside:
+    """Promotion asks you to vouch for something. Until now the only way to read
+    it was to open a terminal and find the file."""
+
+    def test_an_agents_files_come_back(self, store, chat):
+        make_agent("summariser", tools=[])
+        thing = jarvis.agent_files("summariser")
+        assert thing["kind"] == "agent"
+        assert {f["path"] for f in thing["files"]} == {"summariser.yaml", "summariser.md"}
+        assert "do the thing" in [f["body"] for f in thing["files"]
+                                  if f["path"].endswith(".md")][0]
+
+    def test_a_tools_python_comes_back(self, store, chat):
+        """The whole point of looking before you take it."""
+        make_tool("adder", code="def handle(args, ctx):\n    return {'x': 1}\n")
+        thing = jarvis.tool_files("adder")
+        assert thing["python"] is True
+        code = [f["body"] for f in thing["files"] if f["path"] == "handler.py"][0]
+        assert "return {'x': 1}" in code
+
+    def test_nothing_comes_back_for_something_that_is_not_there(self, store, chat):
+        assert jarvis.agent_files("imaginary") == {}
+        assert jarvis.tool_files("imaginary") == {}
+
+    def test_the_screen_shows_the_code(self, client, store, chat):
+        store.set_setting(jarvis.SETTING, True)
+        make_tool("adder", code="def handle(args, ctx):\n    return {'x': 1}\n")
+        page = client.get("/jarvis/tool/adder").get_data(as_text=True)
+        assert "handler.py" in page and "return {&#39;x&#39;: 1}" in page
+
+    def test_the_screen_shows_an_agents_instructions(self, client, store, chat):
+        store.set_setting(jarvis.SETTING, True)
+        make_agent("summariser")
+        page = client.get("/jarvis/agent/summariser").get_data(as_text=True)
+        assert "do the thing" in page and "Make it mine" in page
+
+    def test_it_is_read_only(self, client, store, chat):
+        """Editing Jarvis's tree from the console would make it a thing you
+        maintain. The two moves that matter are taking it and deleting it."""
+        store.set_setting(jarvis.SETTING, True)
+        make_agent("summariser")
+        page = client.get("/jarvis/agent/summariser").get_data(as_text=True)
+        assert "<textarea" not in page
+
+    def test_a_member_cannot_look(self, client_as, store, chat):
+        store.set_setting(jarvis.SETTING, True)
+        make_agent("summariser")
+        assert client_as("member").get("/jarvis/agent/summariser").status_code == 403
+
+    def test_it_is_gone_when_jarvis_is_off(self, client, store, chat):
+        make_agent("summariser")
+        assert client.get("/jarvis/agent/summariser").status_code == 404
+
+    def test_the_panel_offers_it(self, client, store, chat):
+        store.set_setting(jarvis.SETTING, True)
+        make_agent("summariser")
+        panel = client.get(f"/jarvis/panel?chat={chat}").get_data(as_text=True)
+        assert "/jarvis/agent/summariser" in panel and "Look inside" in panel
+
+
 class TestTheInventoryAndDiscarding:
     def test_it_shows_everything_not_only_this_conversation(self, store, chat):
         """What it built last week is still what it has, and a panel that forgot
