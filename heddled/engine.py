@@ -53,7 +53,10 @@ class ToolContext:
         self.agent_version = engine.agent.version
         self.channel = engine.channel
         self.store = engine.store
-        self.settings = engine.settings
+        # Not `engine.settings`. A no-code tool resolves `{{secret.name}}` out
+        # of this, so what a tool sees and what the engine knows are different
+        # questions — see `TurnEngine.tool_settings`.
+        self.settings = engine.tool_settings
 
     def log(self, message: str, **extra) -> None:
         """Anything a handler wants on the spine goes through here."""
@@ -95,6 +98,19 @@ class TurnEngine:
         # against its own agents and tools, and must not resolve theirs.
         self.registry = registry or get_registry()
         self.settings = store.all_settings()
+        # What a *tool* is allowed to resolve `{{secret.name}}` against.
+        #
+        # In the operator's own namespace that is everything: somebody who can
+        # add a file to `tools/` can already read the database. In a namespace
+        # that is not theirs — Jarvis — the credentials come out first, because
+        # a no-code tool is four lines of YAML a model can write, and
+        # `{"type": "text", "config": {"text": "{{secret.anthropic_api_key}}"}}`
+        # would otherwise hand it every key on the instance. Sandboxing the
+        # Python it writes protects nothing while the path we tell it to prefer
+        # is wide open.
+        self.tool_settings = self.settings
+        if self.registry is not get_registry():
+            self.tool_settings = policies.for_untrusted_tools(self.settings)
         self.tool_mocks = tool_mocks  # eval replay: {tool: result}
         self.emit_hook = emit_hook
         self.state: dict = {}

@@ -459,15 +459,20 @@ How to work:
 
 1. Check `list_agents` before making anything, and read a note with `recall`
    when the index below suggests one is relevant.
-2. Build tools with `make_tool`. Prefer the no-code kinds — an `http` call, a
-   `lookup` table, a `fixed` answer, a `template`, a `webhook` — because they
-   are data, need no code, and anyone can read them. Write Python only when
-   none of them fits.
+2. Build tools with `make_tool`. Prefer the no-code kinds — `http`, `lookup`,
+   `fixed`, `text`, `webhook` — because they are data, need no code, and
+   anyone can read them. Write Python only when none of them fits.
 3. Build agents with `make_agent`, mounting the tools they need by name.
 4. Try what you built with `run_own_agent` and fix what does not work. Building
    something and never running it is not finishing.
-5. Use `ask_agent` when one of their own agents already knows something. You
-   cannot change those, only ask, and one may stop for an approval.
+5. `ask_agent` is your one route to anything real. You hold no credentials and
+   never will, so you cannot send mail, charge a card or touch their systems
+   directly — but their agents can, and asking one runs the real thing under
+   its own rules, including stopping for their approval. So when you are asked
+   for something you cannot do, check `list_agents` for one of theirs that
+   can, and say so plainly if there is none: "I have no way to send mail, and
+   you have no agent that can either — give one an email action and I can ask
+   it." That is a more useful answer than a list of your limitations.
 6. Use `remember` when you learn something worth having next time — how their
    systems are shaped, what they prefer, what turned out to be a dead end. Not
    a diary: the conversation is already recorded. One fact per note.
@@ -595,9 +600,34 @@ def _make_tool(args, ctx) -> dict:
                 "own credentials and is not yours to send.")
         manifest["type"] = kind
         manifest["config"] = dict(args.get("config") or {})
+        _refuse_secrets(manifest)
         ctx.log(f"made the tool {name} — {kind}")
     (folder / "tool.yaml").write_text(yamlio.dump(manifest), encoding="utf-8")
     return {"name": name, "made": True, "python": bool(code)}
+
+
+#: How a no-code tool asks for one of the operator's stored credentials.
+SECRET_REF = "{{secret."
+
+
+def _refuse_secrets(manifest: dict) -> None:
+    """Refuse a tool that reaches for the operator's keys.
+
+    The engine already strips credentials out of what a Jarvis tool can
+    resolve, so this changes no outcome — it changes the message. Without it a
+    model writes `{{secret.stripe_key}}`, gets "this tool needs a secret called
+    'stripe_key', which is not set", and spends the rest of the conversation
+    trying to help you set a key it is never going to see.
+    """
+    import json as _json
+
+    if SECRET_REF in _json.dumps(manifest):
+        raise ValueError(
+            "That tool asks for one of the operator's stored credentials, and "
+            "you cannot have them — they are not in reach of anything you "
+            "write, whatever the tool says. If it needs a key, say which "
+            "service and let them build the tool, or ask an agent of theirs "
+            "that already has one.")
 
 
 def _list_agents(args, ctx) -> dict:
@@ -684,7 +714,7 @@ BUILDERS = {
         _list_agents),
     "make_tool": (
         "Make a tool of your own. Prefer a no-code kind — http, lookup, fixed, "
-        "template or webhook — which is data and needs no code at all. Give "
+        "text or webhook — which is data and needs no code at all. Give "
         "`code` only when none of them fits: it runs in a locked-down child "
         "process with no keys, no store and no way back into Heddled.",
         {"type": "object", "properties": {
@@ -693,7 +723,7 @@ BUILDERS = {
             "description": {"type": "string",
                             "description": "What it does, as the agent using it will read it."},
             "kind": {"type": "string",
-                     "description": "http, lookup, fixed, template or webhook."},
+                     "description": "http, lookup, fixed, text or webhook."},
             "config": {"type": "object",
                        "description": "Settings for that kind — url and method for "
                                       "http, the table for lookup, and so on."},

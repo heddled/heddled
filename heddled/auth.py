@@ -331,13 +331,9 @@ def _from_bearer(store, req):
 
 
 # Setting names whose values must never be echoed back to a browser.
-_CREDENTIAL_HINTS = ("key", "token", "password", "secret", "webhook_url")
-
-
-def is_credential(name: str) -> bool:
-    """Whether a setting holds something that should stay write-only."""
-    lowered = (name or "").lower()
-    return any(hint in lowered for hint in _CREDENTIAL_HINTS)
+# Defined in `policies` because the turn engine needs the same test and must
+# not import a web module to get it. Re-exported here, where callers look.
+from .policies import is_credential  # noqa: E402,F401
 
 
 def redacted_settings(store, known_keys) -> dict:

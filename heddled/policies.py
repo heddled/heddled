@@ -84,6 +84,38 @@ def strip_secrets(value, secrets: list[str]):
     return value
 
 
+#: Setting names that hold something nobody should be handed back. Lives here
+#: rather than in `auth` because the engine needs it too and must not import a
+#: web module to get it; `auth.is_credential` is the same function.
+CREDENTIAL_HINTS = ("key", "token", "password", "secret", "webhook_url")
+
+
+def is_credential(name: str) -> bool:
+    """Whether a setting holds something that should stay write-only."""
+    lowered = (name or "").lower()
+    return any(hint in lowered for hint in CREDENTIAL_HINTS)
+
+
+#: Settings that are not credentials but are still not an untrusted tool's to
+#: inherit. `allow_internal_http` is the operator saying "*my* tools may reach
+#: my own network" — a decision about their tools, made before anything of
+#: Jarvis's existed. Handing it on would give a model-chosen URL the run of
+#: 192.168.x.x and the cloud metadata endpoint, which is the exact attack
+#: `tooltypes.guard_destination` was written to stop.
+NOT_INHERITED = {"allow_internal_http"}
+
+
+def for_untrusted_tools(settings: dict) -> dict:
+    """What a tool in a namespace that is not the operator's may see.
+
+    Every credential removed, because a no-code tool resolves `{{secret.name}}`
+    out of this and a model can write one in four lines. The ordinary settings
+    stay — a user agent string is not a secret.
+    """
+    return {k: v for k, v in (settings or {}).items()
+            if not is_credential(k) and k not in NOT_INHERITED}
+
+
 def secret_values(settings: dict) -> list[str]:
     """The stored values worth scrubbing. Short ones are skipped: a two-letter
     setting would blank out ordinary words everywhere it appeared."""

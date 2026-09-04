@@ -181,8 +181,10 @@
     <code>jarvis/</code> — your own <code>agents/</code> and <code>tools/</code>
     are a different tree it holds no path to, and it cannot write a schedule at
     all. It may <em>ask</em> your agents, on the <code>jarvis</code> channel, and
-    their policies and approvals still apply; it can never change them. Python it
-    writes runs in a child process with no keys, no store and no way back in.
+    their policies and approvals still apply; it can never change them. It holds
+    none of your credentials — not in the Python it writes, which runs in a
+    child process with no keys and no store, and not in the no-code tools
+    either, which are handed your settings with every key removed.
     Nothing it makes is yours until you say so, and discarding a conversation
     takes everything it made with it. It keeps notes as Markdown in
     <code>jarvis/memory/</code>, which you can read and delete beside the
