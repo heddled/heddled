@@ -2,6 +2,12 @@
 # but unlike them it is working material rather than definitions.
 work/
 
+# What Jarvis built for itself: its own agents, its own tools, its own
+# workspace. Written by a model, discardable by design, and never part of the
+# project — the way something of Jarvis's becomes yours is that you promote it,
+# and then it lands in agents/ or tools/ like anything else.
+/jarvis/
+
 # Runtime state — the event store, session state, job queue, cursors, and
 # whatever the adapters have written. All of it is created on first run and
 # belongs to the machine it is on, not to the project.

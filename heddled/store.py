@@ -134,6 +134,20 @@ CREATE TABLE IF NOT EXISTS agent_versions (
 );
 CREATE INDEX IF NOT EXISTS ix_agent_versions ON agent_versions(agent, first_seen DESC);
 
+CREATE TABLE IF NOT EXISTS jarvis_runs (
+    id          TEXT PRIMARY KEY,
+    goal        TEXT NOT NULL,
+    status      TEXT NOT NULL DEFAULT 'running',
+    budget_eur  REAL NOT NULL,
+    max_steps   INTEGER NOT NULL,
+    steps       INTEGER NOT NULL DEFAULT 0,
+    session_id  TEXT,
+    note        TEXT,
+    started_by  TEXT,
+    created_at  REAL NOT NULL,
+    ended_at    REAL
+);
+
 CREATE TABLE IF NOT EXISTS golden_traces (
     id          TEXT PRIMARY KEY,
     name        TEXT NOT NULL,

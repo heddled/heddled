@@ -146,6 +146,41 @@
   {% endif %}
 </section>
 
+<section class="card" id="jarvis">
+  <h2>Jarvis</h2>
+  <p class="muted small">Off, and it should stay off unless you want it. Jarvis is
+    the opposite of everything else here: an autonomous loop that writes its own
+    tools, writes its own agents, runs them, and keeps going until it thinks it is
+    finished or the money runs out. It is not how you build something you intend
+    to rely on — it is a way to find out what a goal would take.</p>
+  <form method="post" action="/settings/jarvis">
+    <label class="check">
+      <input type="checkbox" name="enabled" {{ 'checked' if jarvis_on }}>
+      Show the Jarvis tab and let runs be started
+    </label>
+    <div class="setting-rows">
+      <div class="setting-row">
+        <label for="jarvis_model">Model it thinks with
+          <span class="mono small muted">jarvis_model</span></label>
+        <input id="jarvis_model" name="model" class="mono" list="jarvis-models"
+               value="{{ jarvis_model }}" placeholder="{{ jarvis_model }}">
+        <datalist id="jarvis-models">
+          {% for m in known_models %}<option value="{{ m }}">{% endfor %}
+        </datalist>
+      </div>
+    </div>
+    <div class="row"><button class="btn" type="submit">Save</button></div>
+  </form>
+  <p class="hint"><b>What it can and cannot reach.</b> It writes only into
+    <code>jarvis/</code> — your own <code>agents/</code> and <code>tools/</code>
+    are a different tree it holds no path to. It may <em>ask</em> your agents, on
+    the <code>jarvis</code> channel, and their policies and approvals still apply;
+    it can never change them. Python it writes runs in a child process with no
+    keys, no store and no way back in. Nothing it makes reaches your estate until
+    you promote it by hand, and a run you discard takes everything it made with
+    it. Every run needs a budget and a step cap before it starts.</p>
+</section>
+
 <section class="card">
   <h2>All settings</h2>
   <p class="muted small">Credentials are shown masked — Heddled has them, this page

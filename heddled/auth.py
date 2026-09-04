@@ -282,7 +282,10 @@ def install(app) -> None:
 
 # Paths only an administrator may change: people, credentials, and anything
 # that reaches outside Heddled.
-ADMIN_WRITE_PREFIXES = ("/users", "/settings")
+# `/jarvis` is here to *read* as well as to change: a screen that starts an
+# autonomous loop, spends money and writes agents is not something a member
+# account should be able to open, let alone press.
+ADMIN_WRITE_PREFIXES = ("/users", "/settings", "/jarvis")
 
 
 def _is_approval_decision(path: str) -> bool:

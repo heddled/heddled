@@ -81,7 +81,8 @@ class TurnEngine:
 
     def __init__(self, store, agent, session_id: str, turn_id: str,
                  channel: str = "webchat", tool_mocks: dict = None,
-                 emit_hook=None, call_chain: list = None, caller: str = None):
+                 emit_hook=None, call_chain: list = None, caller: str = None,
+                 registry=None):
         self.store = store
         self.agent = agent
         self.session_id = session_id
@@ -90,7 +91,9 @@ class TurnEngine:
         # Who is driving this turn from outside — an MCP caller, an API key
         # holder, a parent agent. Policies can key on it (§12).
         self.caller = caller
-        self.registry = get_registry()
+        # Passed in for a namespace that is not the operator's — Jarvis runs
+        # against its own agents and tools, and must not resolve theirs.
+        self.registry = registry or get_registry()
         self.settings = store.all_settings()
         self.tool_mocks = tool_mocks  # eval replay: {tool: result}
         self.emit_hook = emit_hook

@@ -96,7 +96,12 @@ def make_workspace_handler(operation: str, agent_name: str) -> Callable:
     def handle(args, ctx):
         from .registry import get_registry
 
-        agent = get_registry().get_agent(agent_name)
+        # Through the registry that is running this turn, not the process-wide
+        # one: Jarvis's agents live in their own tree, and looking them up in
+        # the operator's would find nothing — or, worse, something else with
+        # the same name and a different workspace.
+        reg = getattr(getattr(ctx, "engine", None), "registry", None) or get_registry()
+        agent = reg.get_agent(agent_name)
         if not agent:
             raise workspace.WorkspaceError(f"no agent named '{agent_name}'")
         root = workspace.resolve_root(agent)

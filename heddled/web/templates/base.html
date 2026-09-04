@@ -42,6 +42,10 @@
      {{ 'aria-current=page' if request.path.startswith('/deployments') }}>Publish</a>
   <a href="/spending" class="{{ 'on' if request.path.startswith('/spending') }}"
      {{ 'aria-current=page' if request.path.startswith('/spending') }}>Spending</a>
+  {% if jarvis_enabled and g.user and g.user.role == 'admin' %}
+  <a href="/jarvis" class="{{ 'on' if request.path.startswith('/jarvis') }}"
+     {{ 'aria-current=page' if request.path.startswith('/jarvis') }}>Jarvis</a>
+  {% endif %}
   {% if g.user and g.user.role == 'admin' %}
   <a href="/users" class="{{ 'on' if request.path.startswith('/users') }}"
      {{ 'aria-current=page' if request.path.startswith('/users') }}>People</a>

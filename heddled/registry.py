@@ -148,6 +148,29 @@ class Tool:
             from .filetools import make_workspace_handler
 
             return make_workspace_handler(self.raw["operation"], self.raw["agent"])
+        if self.source == "jarvis":
+            # Jarvis's own builders. They live in code rather than in a tools/
+            # folder because they write agents and tools, and a tool that can
+            # do that is not one an operator should be able to mount on
+            # `support` by copying a directory in.
+            from .jarvis import make_builder_handler
+
+            return make_builder_handler(self.raw["jarvis"])
+        if self.raw.get("sandboxed"):
+            # Code an agent wrote for itself. Not loaded into this process,
+            # which holds the store and every provider key.
+            from .sandbox import run_handler
+
+            handler, workdir = self.handler_path, self.dir
+            name = self.name
+
+            def sandboxed(args, ctx):
+                answer = run_handler(handler, args, workdir=workdir, tool=name)
+                for line in answer["logs"]:
+                    ctx.log(line)
+                return answer["result"]
+
+            return sandboxed
         if self.is_no_code:
             # Built from a form rather than written. The engine cannot tell.
             from . import tooltypes

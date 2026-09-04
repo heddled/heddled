@@ -429,6 +429,14 @@ Resolved 2026-08-02:
 
 9. **Authoring is a first-class console capability.** "Files first" governs where truth lives, not how much the UI may do, and a console you cannot create an agent from fails the "ship an agent in an afternoon" promise for anyone who does not already have the YAML memorised. So: structured forms over the agent and tool schemas, a raw-file toggle beside every one of them, scaffolds (`heddled new …` and the matching buttons) shared between CLI and UI, and a Tools screen so shared capabilities are edited where their blast radius is visible. Round-tripping preserves comments and key order, and anything the form cannot represent is surfaced rather than silently dropped. Committing on save is offered and defaults to off.
 
+Resolved 2026-09-04:
+
+10. **Jarvis is an admitted drift, and is fenced as one.** Everything above says an agent does what a person decided it may do; Jarvis writes its own tools, writes its own agents, runs them, and continues until it says it is finished. That contradicts §2 and it is worth saying so plainly rather than reframing it. It ships because the question "what would this goal actually take?" is worth being able to ask, and because a single-operator Heddled is the one place where asking it is nobody else's risk.
+
+    What makes it defensible is not a warning banner. It is that the three properties the rest of the platform earns are kept by construction rather than by instruction: it writes into a **separate tree** read through a second registry, so "it cannot edit your policies" is a fact about which directories exist and not a rule it is asked to follow; it may **invoke** the operator's agents but never write to them, on its own channel (`jarvis`) so a policy can refuse it by name, with every approval gate and budget on those agents still applying; and nothing it makes reaches the operator's estate until a person **promotes** it one thing at a time, which is the approval gate applied to creation instead of to action. Python it writes runs in a child process with no keys, no store and no path back in — and keeps doing so after promotion, because promoting means somebody wanted it, not that a person wrote it.
+
+    A **run** is the unit rather than an agent: one goal, one required budget, one required step cap, discardable whole. Nothing here is on by default, and the screen is admin-only whether or not it is.
+
 Nothing remaining blocks Phase 0.
 
 ---

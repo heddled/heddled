@@ -218,6 +218,22 @@ The identity is recorded on the session, so a turn resumed days later is still e
 
 The spine is exportable as OTLP traces — one trace per session, one span per turn, child spans per model and tool call, with everything else riding along as span events. Set `otel_endpoint` in Settings (or `OTEL_EXPORTER_OTLP_ENDPOINT`) and restart. It is a consumer like any other: it observes the stream and can never affect it.
 
+## Jarvis
+
+Off unless `jarvis_enabled` is set, admin-only either way, and deliberately the opposite of everything above: an autonomous loop that writes its own tools, writes its own agents, runs them, and continues until it declares itself finished or a budget or step cap stops it. `heddled/jarvis.py`.
+
+The unit is a **run** — one goal, one required budget, one required step cap, recorded in `jarvis_runs`. Each step is an ordinary `TurnEngine.run`, so a run reads in Activity like any other session and needs no separate audit surface.
+
+Three fences carry it:
+
+- **Its own tree.** `jarvis/agents`, `jarvis/tools`, `jarvis/work`, read through a second `Registry` passed into `TurnEngine(registry=…)`. The operator's `agents/` and `tools/` are a different directory that nothing in the module holds a path to — "it cannot edit your policies" is structural, not a rule it is asked to follow. Agent files are assembled field by field rather than written from what the model hands over, so `workspace`, `policies` and `triggers` have no path in at all.
+- **Reading and invoking, never writing.** `ask_agent` runs one of the operator's agents through `runtime.submit_message` on the `jarvis` channel; every policy, approval gate and budget on that agent still applies, and `deny_channels: [jarvis]` refuses it by name.
+- **Promotion.** `promote(kind, name)` copies one thing into the operator's estate and refuses to overwrite an existing file, so an agent named `support` cannot become yours by being pressed. `sandboxed: true` deliberately survives promotion. `discard(run)` deletes everything a run made that was not promoted.
+
+Python Jarvis writes is marked `sandboxed: true`, which routes `Tool.load_handler()` to `heddled/sandbox.py`: a child process under `python -I` with a scrubbed environment (no `os.environ`, so no provider keys), `RLIMIT_AS`/`CPU`/`FSIZE`/`NOFILE` set by the child on itself before the handler is imported, the workspace as its working directory, and a NUL-marked JSON result so anything the handler prints cannot be mistaken for the answer. It is a strong seatbelt around code a model wrote — not a namespace, not seccomp, and not a network boundary.
+
+Spend is summed over the run's session *and every session started underneath it* (a recursive CTE on `parent_session_id`), or the loop could spend the afternoon inside `run_own_agent` against a budget that never moved.
+
 ## CLI
 
 | Command | What it does |
@@ -296,9 +312,15 @@ heddled/          the platform
   authoring.py    create/edit/delete agents, tools, policies (CLI + console)
   yamlio.py       comment-preserving YAML round-trip
   gitio.py        optional commit-on-save
+  workspace.py    an agent's folder, and the path checks that confine it
+  documents.py    reads and writes .docx/.xlsx/.pptx with no dependency
+  filetools.py    list_files / read_file / write_file, built in once
+  sandbox.py      agent-written Python, in a child process that holds nothing
+  jarvis.py       the autonomous mode, in a tree of its own (off by default)
   adapters/       channels, approval adapters, pollers
   providers/      anthropic, openai-compatible, mock
   web/            Flask console, JSON API, SSE, MCP server
+jarvis/           what Jarvis built for itself — gitignored, discardable
 examples/starter/ an agent and three tools to copy into agents/ and tools/
 examples/level3/  a worked custom turn engine
 tools_dev/        checks the console the way a person would (Playwright)

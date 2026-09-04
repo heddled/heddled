@@ -1,0 +1,96 @@
+{% extends "base.html" %}
+{% block title %}Jarvis · Heddled{% endblock %}
+{% block body %}
+
+<header class="page-head">
+  <h1>Jarvis</h1>
+  <div class="page-actions">
+    <a class="btn tiny" href="/settings#jarvis">Settings</a>
+  </div>
+</header>
+
+<p class="lede">Give it a goal and a budget and it works on its own: it writes the
+  tools it needs, writes agents to use them, runs them, and keeps going until it
+  says it is finished or it runs out of money or steps. Everything it makes lives
+  in its own tree until you move it across. Discard a run and what it made goes
+  with it.</p>
+
+{#- Said once, plainly, on the screen where a run is started — not tucked into a
+    tooltip on a button somebody has already pressed. -#}
+<p class="banner warn"><b>This is not how you build something you mean to rely on.</b>
+  Jarvis decides for itself what to build and how, spends money doing it, and
+  nobody reads what it wrote until you do. Use it to find out what a goal would
+  take, then read the result before you trust a line of it.</p>
+
+{% if done %}<p class="banner ok">{{ done }}.</p>{% endif %}
+{% if problem %}<p class="banner bad">{{ problem }}</p>{% endif %}
+
+<section class="card">
+  <h2>Start a run</h2>
+  <form method="post" action="/jarvis" class="wizard">
+    <label>What should it work on?
+      <textarea name="goal" rows="3" required
+                placeholder="Build me something that turns the weekly CSV export into a one-page summary."></textarea></label>
+    <p class="hint">One goal, said the way you would say it to a colleague. Narrow
+      beats grand: it has a step cap, and a vague goal spends it wandering.</p>
+
+    <div class="field-grid">
+      <label>Budget
+        <input name="budget" type="number" step="0.50" min="0.50"
+               max="{{ max_budget }}" value="2.00" required></label>
+      <label>Step cap
+        <input name="steps" type="number" min="1" max="{{ max_steps }}"
+               value="20" required></label>
+    </div>
+    <p class="hint">Both are required and neither has a default that lets it run
+      away: at most €{{ '%.0f' | format(max_budget) }} and {{ max_steps }} steps.
+      It stops the moment either is reached, wherever it has got to. Thinking with
+      <code>{{ model }}</code>.</p>
+
+    <div class="row"><button class="btn primary" type="submit">Start the run</button></div>
+  </form>
+</section>
+
+<section class="card">
+  <h2>Runs</h2>
+  {% if runs %}
+  <table class="grid">
+    <thead><tr><th>Goal</th><th>Outcome</th><th>Steps</th><th>Spent</th>
+      <th>Started</th><th>By</th></tr></thead>
+    <tbody>
+      {% for r in runs %}
+      <tr>
+        <td><a href="/jarvis/{{ r.id }}">{{ r.goal }}</a></td>
+        <td><span class="badge {{ r.tone }}">{{ r.in_words }}</span></td>
+        <td class="small muted">{{ r.steps }} of {{ r.max_steps }}</td>
+        <td class="small muted">€{{ '%.2f' | format(r.spent) }}
+          of €{{ '%.2f' | format(r.budget) }}</td>
+        <td class="small muted">{{ r.created_at | ago }}</td>
+        <td class="small muted">{{ r.started_by }}</td>
+      </tr>
+      {% endfor %}
+    </tbody>
+  </table>
+  {% else %}
+  <p class="empty">No runs yet. The first one is the cheapest way to find out
+    whether this is any use to you — give it a small goal and two euros.</p>
+  {% endif %}
+</section>
+
+<section class="card">
+  <h2>What it can and cannot reach</h2>
+  <ul class="hint">
+    <li><b>It writes only into <code>jarvis/</code>.</b> Your own
+      <code>agents/</code> and <code>tools/</code> are a different tree, read
+      through a different registry, and nothing in Jarvis holds a path to them.</li>
+    <li><b>It may ask your agents, never change them.</b> Questions arrive on the
+      <code>jarvis</code> channel, so a policy can refuse them by name, and every
+      approval gate and budget on that agent still applies.</li>
+    <li><b>Python it writes runs in a child process</b> with no API keys, no
+      access to the store, and no way to import Heddled — capped on memory, CPU
+      and time.</li>
+    <li><b>Nothing crosses over until you promote it</b>, one thing at a time,
+      and promoting refuses to overwrite anything of yours.</li>
+  </ul>
+</section>
+{% endblock %}

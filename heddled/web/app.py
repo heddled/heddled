@@ -36,6 +36,7 @@ from .. import (
     config,
     evals,
     gitio,
+    jarvis,
     otel,
     story,
     tooltypes,
@@ -272,6 +273,7 @@ def create_app(start_worker: bool = True, dev: bool = False) -> Flask:
             "pending_approvals": len(store.pending_approvals()),
             "auth_status": auth.status(store),
             "dev_mode": app.config["DEV"],
+            "jarvis_enabled": jarvis.enabled(store),
             "event_class": EVENT_CLASS,
             "now": time.time(),
         }
@@ -1192,6 +1194,9 @@ def register_console(app: Flask) -> None:
             saved=request.args.get("saved"),
             retention_days=config.KEEP_FULL_CONTEXT_DAYS,
             default_env=config.DEFAULT_ENV,
+            jarvis_on=jarvis.enabled(store),
+            jarvis_model=jarvis.model(store),
+            known_models=KNOWN_MODELS,
         )
 
     @app.route("/setup", methods=["GET", "POST"])
@@ -1402,6 +1407,17 @@ def register_console(app: Flask) -> None:
     def set_commit_on_save(self=None):
         get_store().set_setting(gitio.SETTING, request.form.get("enabled") == "on")
         return redirect(url_for("settings_screen"))
+
+    @app.route("/settings/jarvis", methods=["POST"])
+    def set_jarvis():
+        """Turning it on adds a tab; turning it off takes the routes away too,
+        so a bookmark stops working rather than quietly still working."""
+        store = get_store()
+        store.set_setting(jarvis.SETTING, request.form.get("enabled") == "on")
+        chosen = (request.form.get("model") or "").strip()
+        if chosen:
+            store.set_setting(jarvis.MODEL_SETTING, chosen)
+        return redirect(url_for("settings_screen") + "#jarvis")
 
     @app.route("/approve/<aid>")
     def approve_page(aid):
@@ -2043,6 +2059,126 @@ def register_api(app: Flask) -> None:
             return redirect(url_for("approvals_inbox",
                                     problem=f"somebody already {result['status']} that"))
         return redirect(url_for("approvals_inbox", done=result["status"]))
+
+    # --- Jarvis ------------------------------------------------------------
+
+    #: What a run's status means, in the words somebody reading the screen
+    #: needs. The stored word never changes; only the reading of it.
+    RUN_WORDS = {
+        "running": "working",
+        "done": "finished",
+        "spent": "out of budget",
+        "stopped": "stopped by you",
+        "waiting": "waiting for approval",
+        "failed": "stopped with a problem",
+        "discarded": "discarded",
+    }
+
+    #: How each outcome should read at a glance. Worked out here rather than in
+    #: the template: a Jinja conditional listing status names inside a class
+    #: attribute is both unreadable and indistinguishable, to anything scanning
+    #: the templates, from four classes the stylesheet does not have.
+    RUN_TONES = {
+        "running": "status running", "done": "ok", "failed": "bad",
+        "spent": "warn", "waiting": "warn", "stopped": "warn",
+    }
+
+    def _run_view(row) -> dict:
+        spent = jarvis.spend(row["id"])
+        budget = float(row["budget_eur"])
+        return {
+            "id": row["id"],
+            "goal": row["goal"],
+            "status": row["status"],
+            "tone": RUN_TONES.get(row["status"], ""),
+            "in_words": RUN_WORDS.get(row["status"], row["status"]),
+            "live": row["status"] == "running",
+            "budget": budget,
+            "spent": spent,
+            "spent_pct": min(100, round(spent / budget * 100)) if budget else 0,
+            "steps": row["steps"],
+            "max_steps": row["max_steps"],
+            "session_id": row["session_id"],
+            "note": row["note"],
+            "started_by": row["started_by"],
+            "created_at": row["created_at"],
+            "ended_at": row["ended_at"],
+        }
+
+    # Off unless somebody turns it on in Settings, and admin-only either way
+    # (see auth.ADMIN_WRITE_PREFIXES). Every route starts by checking both, so
+    # turning the setting off closes the door rather than only hiding the tab.
+
+    def _jarvis_on():
+        if not jarvis.enabled(get_store()):
+            abort(404)
+
+    @app.route("/jarvis")
+    def jarvis_screen():
+        _jarvis_on()
+        rows = [_run_view(r) for r in jarvis.runs()]
+        return render_template(
+            "jarvis.html", runs=rows, model=jarvis.model(),
+            max_budget=jarvis.MAX_BUDGET_EUR, max_steps=jarvis.MAX_STEPS,
+            problem=request.args.get("problem"), done=request.args.get("done"))
+
+    @app.route("/jarvis", methods=["POST"])
+    def jarvis_start():
+        _jarvis_on()
+        who = (getattr(g, "user", None) or {}).get("username") or "console"
+        try:
+            run_id = jarvis.start_run(request.form.get("goal", ""),
+                                      request.form.get("budget"),
+                                      request.form.get("steps"), who)
+        except ValueError as exc:
+            return redirect(url_for("jarvis_screen", problem=str(exc)))
+        return redirect(url_for("jarvis_run_screen", run_id=run_id))
+
+    @app.route("/jarvis/<run_id>")
+    def jarvis_run_screen(run_id):
+        _jarvis_on()
+        row = jarvis.get_run(run_id)
+        if not row:
+            abort(404)
+        # Every step it took is an ordinary turn on the ordinary session, so
+        # the trace already has a screen — this one links to it rather than
+        # growing a second, worse copy of it.
+        return render_template(
+            "jarvis_run.html", run=_run_view(row), made=jarvis.made(run_id),
+            problem=request.args.get("problem"), done=request.args.get("done"))
+
+    @app.route("/jarvis/<run_id>/stop", methods=["POST"])
+    def jarvis_stop(run_id):
+        _jarvis_on()
+        jarvis.stop_run(run_id)
+        return redirect(url_for("jarvis_run_screen", run_id=run_id, done="stopped"))
+
+    @app.route("/jarvis/<run_id>/discard", methods=["POST"])
+    def jarvis_discard(run_id):
+        _jarvis_on()
+        if not jarvis.get_run(run_id):
+            abort(404)
+        what = jarvis.discard(run_id)
+        return redirect(url_for(
+            "jarvis_run_screen", run_id=run_id,
+            done=f"discarded {len(what['agents'])} agent(s) and "
+                 f"{len(what['tools'])} tool(s)"))
+
+    @app.route("/jarvis/<run_id>/promote", methods=["POST"])
+    def jarvis_promote(run_id):
+        """The one door between Jarvis's tree and the operator's, and a signed-in
+        administrator pressing a button is the only thing that opens it."""
+        _jarvis_on()
+        if not jarvis.get_run(run_id):
+            abort(404)
+        try:
+            path = jarvis.promote(request.form.get("kind", ""),
+                                  request.form.get("name", ""))
+        except ValueError as exc:
+            return redirect(url_for("jarvis_run_screen", run_id=run_id,
+                                    problem=str(exc)))
+        return redirect(url_for("jarvis_run_screen", run_id=run_id,
+                                done=f"promoted — it is now {path}"))
 
     @app.route("/chat/<name>/report", methods=["POST"])
     def chat_report(name):
