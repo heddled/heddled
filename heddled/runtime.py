@@ -247,6 +247,13 @@ def _engine_for(agent, session_id: str, turn_id: str, channel: str) -> TurnEngin
     origin = json.loads(session["trigger_origin"] or "{}") if session else {}
     caller = origin.get("caller")
     kwargs = dict(channel=channel, call_chain=call_chain, caller=caller)
+    if channel == "jarvis":
+        from . import jarvis
+
+        # How much one message may do before it comes back to you, and a soft
+        # stop rather than an error when it gets there — see TurnEngine.
+        kwargs["max_iterations"] = jarvis.max_steps()
+        kwargs["soft_iteration_limit"] = True
     namespace = registry_for(channel)
     if namespace is not get_registry():
         # The same tree the agent came from. An engine resolving its tools in

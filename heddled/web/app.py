@@ -1198,6 +1198,8 @@ def register_console(app: Flask) -> None:
             jarvis_model=jarvis.model(store),
             jarvis_budget=jarvis.default_budget(store),
             jarvis_max_budget=jarvis.MAX_BUDGET_EUR,
+            jarvis_steps=jarvis.max_steps(store),
+            jarvis_max_steps_ceiling=jarvis.MAX_STEPS_CEILING,
             known_models=KNOWN_MODELS,
         )
 
@@ -1425,6 +1427,12 @@ def register_console(app: Flask) -> None:
             budget = 0
         if 0 < budget <= jarvis.MAX_BUDGET_EUR:
             store.set_setting(jarvis.BUDGET_SETTING, budget)
+        try:
+            steps = int(request.form.get("steps") or 0)
+        except ValueError:
+            steps = 0
+        if 0 < steps <= jarvis.MAX_STEPS_CEILING:
+            store.set_setting(jarvis.STEPS_SETTING, steps)
         return redirect(url_for("settings_screen") + "#jarvis")
 
     @app.route("/approve/<aid>")

@@ -446,11 +446,77 @@ class TestTheInventoryAndDiscarding:
         assert (jarvis.agents_dir() / "theirs.yaml").is_file()
 
 
+class TestHowMuchItDoesPerMessage:
+    def test_the_default_is_low_on_purpose(self, store):
+        """Seeing it work in stretches is most of the point of a conversation."""
+        assert jarvis.max_steps(store) == jarvis.DEFAULT_MAX_STEPS
+
+    def test_the_setting_is_honoured(self, store):
+        store.set_setting(jarvis.STEPS_SETTING, 3)
+        assert jarvis.max_steps(store) == 3
+
+    def test_it_is_clamped_rather_than_trusted(self, store):
+        store.set_setting(jarvis.STEPS_SETTING, 10_000)
+        assert jarvis.max_steps(store) == jarvis.MAX_STEPS_CEILING
+        store.set_setting(jarvis.STEPS_SETTING, 0)
+        assert jarvis.max_steps(store) == 1
+        store.set_setting(jarvis.STEPS_SETTING, "not a number")
+        assert jarvis.max_steps(store) == jarvis.DEFAULT_MAX_STEPS
+
+    def test_a_jarvis_turn_gets_that_many_and_stops_softly(self, store):
+        from heddled import runtime
+
+        store.set_setting(jarvis.SETTING, True)
+        store.set_setting(jarvis.STEPS_SETTING, 3)
+        jarvis.write_driver()
+        sid = store.create_session(agent=jarvis.DRIVER, channel=jarvis.CHANNEL)
+        agent = jarvis.registry().get_agent(jarvis.DRIVER)
+        engine = runtime._engine_for(agent, sid, "t_1", jarvis.CHANNEL)
+        assert engine.max_iterations == 3
+        assert engine.soft_iteration_limit is True
+
+    def test_an_ordinary_agent_keeps_the_platform_rail(self, store, registry):
+        """Unchanged for everyone else: a runaway agent is still a fault, not a
+        checkpoint."""
+        from heddled import config, runtime
+
+        sid = store.create_session(agent="support", channel="chat")
+        engine = runtime._engine_for(registry.get_agent("support"), sid, "t_1", "chat")
+        assert engine.max_iterations == config.MAX_TOOL_ITERATIONS
+        assert engine.soft_iteration_limit is False
+
+    def test_running_out_of_steps_ends_the_turn_cleanly(self, store):
+        """Not an error. Reporting it as one would make the setting unpleasant
+        to use and push everybody to turn it off."""
+        from heddled.engine import COMPLETED, TurnEngine
+        from heddled.events import new_id
+
+        store.set_setting(jarvis.SETTING, True)
+        jarvis.write_driver()
+        reg = jarvis.registry()
+        sid = store.create_session(agent=jarvis.DRIVER, channel=jarvis.CHANNEL)
+        engine = TurnEngine(store, reg.get_agent(jarvis.DRIVER), sid, new_id("t"),
+                            channel=jarvis.CHANNEL, registry=reg,
+                            max_iterations=2, soft_iteration_limit=True)
+        engine.state = {"messages": [], "iteration": 99}
+        result = engine._loop()
+        assert result.status == COMPLETED
+        assert "stopped here" in result.reply and "continue" in result.reply
+        assert store.get_session(sid)["status"] == "ended"
+
+
 class TestTheBudget:
     def test_a_new_conversation_gets_the_default(self, store):
         store.set_setting(jarvis.BUDGET_SETTING, 3.0)
         chat_id = jarvis.start_chat("something", "tester")
         assert jarvis.get_chat(chat_id)["budget_eur"] == 3.0
+
+    def test_a_stored_nonsense_budget_does_not_become_a_real_one(self, store):
+        for bad in (0, -5, "lots"):
+            store.set_setting(jarvis.BUDGET_SETTING, bad)
+            assert jarvis.default_budget(store) == jarvis.DEFAULT_BUDGET_EUR
+        store.set_setting(jarvis.BUDGET_SETTING, 10_000)
+        assert jarvis.default_budget(store) == jarvis.MAX_BUDGET_EUR
 
     def test_an_enormous_budget_is_refused(self, store):
         with pytest.raises(ValueError, match="budget"):

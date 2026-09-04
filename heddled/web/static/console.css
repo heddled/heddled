@@ -1157,9 +1157,19 @@ details.picker > summary:hover .picker-verb { text-decoration: underline; }
    above the message box, which reads as a page that failed to load. */
 .chat-log {
   flex: 1 1 auto; overflow-y: auto; min-height: 0;
-  display: flex; flex-direction: column; justify-content: flex-end;
+  display: flex; flex-direction: column;
   gap: 14px; padding: 22px 0;
 }
+/* The log grows from the bottom, and this is the only correct way to do it.
+   `justify-content: flex-end` looks like the obvious answer and is a trap: on a
+   scroll container it makes content overflowing the *top* edge unreachable —
+   scrollHeight reports as if it were not there, so the pane cannot be scrolled
+   back and the history is simply gone. It was measured at 4944px of
+   conversation above a log claiming to have no overflow at all.
+
+   An auto top margin on the first child does the same job and does it right: it
+   absorbs the spare room when the conversation is short, and collapses to
+   nothing when there is none. */
 .chat-log > :first-child { margin-top: auto; }
 .chat-log:focus-visible { outline: 2px solid var(--accent); outline-offset: -2px; }
 

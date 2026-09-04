@@ -85,7 +85,8 @@ class TurnEngine:
     def __init__(self, store, agent, session_id: str, turn_id: str,
                  channel: str = "webchat", tool_mocks: dict = None,
                  emit_hook=None, call_chain: list = None, caller: str = None,
-                 registry=None):
+                 registry=None, max_iterations: int = None,
+                 soft_iteration_limit: bool = False):
         self.store = store
         self.agent = agent
         self.session_id = session_id
@@ -111,6 +112,11 @@ class TurnEngine:
         self.tool_settings = self.settings
         if self.registry is not get_registry():
             self.tool_settings = policies.for_untrusted_tools(self.settings)
+        # How much work one message may do before the turn ends. A rail against
+        # a runaway loop for an ordinary agent; for Jarvis it is the "come back
+        # and check in" dial, which is why it can also be a soft stop.
+        self.max_iterations = max_iterations or config.MAX_TOOL_ITERATIONS
+        self.soft_iteration_limit = soft_iteration_limit
         self.tool_mocks = tool_mocks  # eval replay: {tool: result}
         self.emit_hook = emit_hook
         self.state: dict = {}
@@ -181,10 +187,21 @@ class TurnEngine:
     def _loop(self) -> TurnResult:
         try:
             while True:
-                if self.state.get("iteration", 0) > config.MAX_TOOL_ITERATIONS:
+                if self.state.get("iteration", 0) > self.max_iterations:
+                    if self.soft_iteration_limit:
+                        # For Jarvis this is not a fault, it is the dial the
+                        # operator set: work in stretches of N steps and come
+                        # back. Reporting it as an error would make the setting
+                        # unpleasant to use and push everyone to turn it off.
+                        return self._finish(
+                            f"I have used the {self.max_iterations} steps this "
+                            "message gets, so I have stopped here rather than "
+                            "carrying on unattended. Tell me to continue and I "
+                            "will pick up where I left off — or change how many "
+                            "steps I get in Settings.")
                     return self._fail(
                         "iteration_limit",
-                        f"agent exceeded {config.MAX_TOOL_ITERATIONS} tool iterations",
+                        f"agent exceeded {self.max_iterations} tool iterations",
                     )
 
                 # 1. Any tool calls left over from the last model response?

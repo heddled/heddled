@@ -49,6 +49,7 @@ from .store import get_store
 SETTING = "jarvis_enabled"
 MODEL_SETTING = "jarvis_model"
 BUDGET_SETTING = "jarvis_budget_eur"
+STEPS_SETTING = "jarvis_max_steps"
 DEFAULT_MODEL = "mock/echo"
 DEFAULT_BUDGET_EUR = 5.0
 MAX_BUDGET_EUR = 100.0
@@ -61,6 +62,13 @@ CHANNEL = "jarvis"
 #: continue. Not the real rail — the budget is — but a loop that somehow drives
 #: itself should still hit a wall.
 MAX_TURNS = 200
+
+#: How many steps — tool calls and the thinking between them — one message may
+#: take before Jarvis stops and reports back. The dial between "does the whole
+#: job and hands you a wall of text" and "checks in constantly". Low on purpose:
+#: seeing it work in stretches is most of the point of a conversation.
+DEFAULT_MAX_STEPS = 8
+MAX_STEPS_CEILING = 40
 
 #: The agent you are talking to. It is the only one with the builder tools: an
 #: agent Jarvis makes is an ordinary agent and does not get to make more of
@@ -82,12 +90,28 @@ def model(store=None) -> str:
     return (store or get_store()).get_setting(MODEL_SETTING) or DEFAULT_MODEL
 
 
-def default_budget(store=None) -> float:
+def max_steps(store=None) -> int:
+    # `or DEFAULT` would be wrong: a stored 0 is falsy, and reading it as
+    # "unset" turns "no steps at all" into eight of them. Unset is None.
+    stored = (store or get_store()).get_setting(STEPS_SETTING)
+    if stored is None:
+        return DEFAULT_MAX_STEPS
     try:
-        return float((store or get_store()).get_setting(BUDGET_SETTING)
-                     or DEFAULT_BUDGET_EUR)
+        value = int(stored)
+    except (TypeError, ValueError):
+        return DEFAULT_MAX_STEPS
+    return max(1, min(value, MAX_STEPS_CEILING))
+
+
+def default_budget(store=None) -> float:
+    stored = (store or get_store()).get_setting(BUDGET_SETTING)
+    if stored is None:
+        return DEFAULT_BUDGET_EUR
+    try:
+        value = float(stored)
     except (TypeError, ValueError):
         return DEFAULT_BUDGET_EUR
+    return min(value, MAX_BUDGET_EUR) if value > 0 else DEFAULT_BUDGET_EUR
 
 
 # --------------------------------------------------------------- its tree
@@ -450,10 +474,17 @@ INSTRUCTIONS = """\
 You are Jarvis. You build things for the person you are talking to: small
 agents, and the tools those agents need, in a tree of your own.
 
-You are in a conversation, not on a leash — so work in steps and say what you
-are doing. Build something, try it, tell them what happened, and ask when a
-choice is theirs to make rather than guessing. They can see everything you
-build in a panel beside this conversation, so you do not need to recite it.
+You are in a conversation, not on a leash. Work in short stretches and come
+back: do the next useful thing, say in two or three sentences what you did and
+what you would do next, and stop. Do not plan the whole job and then execute it
+silently — a reply that arrives after ten minutes as a wall of text is worse
+than four short ones, because by then the first wrong assumption is buried in
+work built on top of it.
+
+Ask when a choice is theirs to make rather than guessing. Keep replies short:
+they can see everything you build in the panel beside this conversation, so
+listing it back is wasted space. No status tables, no summaries of what you are
+about to do — just do it and say what happened.
 
 How to work:
 
