@@ -44,12 +44,40 @@ JS = r"""
     const [r,g,b] = channels(str);
     return .2126*srgb(r) + .7152*srgb(g) + .0722*srgb(b);
   };
+  // The alpha of a background, or 1. `color(srgb r g b / a)` and `rgba(...)`
+  // both put it last, and only when it is there.
+  const alphaOf = s => {
+    const t = s.trim();
+    if (/^color\(/i.test(t)) {
+      const m = t.match(/\/\s*(\d*\.?\d+)/);
+      return m ? Number(m[1]) : 1;
+    }
+    const n = (t.match(/-?\d*\.?\d+(e-?\d+)?/gi) || []).map(Number);
+    return n.length > 3 ? n[3] : 1;
+  };
+  const over = (top, bottom) => {
+    // A tint is what you see *through*, so it has to be composited over what is
+    // behind it. Measuring the unblended colour reported every chat bubble on
+    // the site as a contrast failure: a 14% accent tint over near-white was
+    // being scored as solid mid-blue.
+    const a = alphaOf(top);
+    if (a >= 1) return top;
+    const [tr,tg,tb] = channels(top), [br,bg,bb] = channels(bottom);
+    return `rgb(${tr*a + br*(1-a)}, ${tg*a + bg*(1-a)}, ${tb*a + bb*(1-a)})`;
+  };
   const bgOf = el => {
+    const layers = [];
     for (let n = el; n; n = n.parentElement) {
       const c = getComputedStyle(n).backgroundColor;
-      if (c && !/rgba\(0, 0, 0, 0\)|transparent/.test(c)) return c;
+      if (!c || /rgba\(0, 0, 0, 0\)|transparent/.test(c)) continue;
+      layers.push(c);
+      if (alphaOf(c) >= 1) break;          // opaque: nothing below it shows
     }
-    return getComputedStyle(document.body).backgroundColor;
+    if (!layers.length) return getComputedStyle(document.body).backgroundColor;
+    if (alphaOf(layers[layers.length - 1]) < 1) {
+      layers.push(getComputedStyle(document.body).backgroundColor);
+    }
+    return layers.reduceRight((below, top) => over(top, below));
   };
   const ratio = (a,b) => { const [x,y] = [lum(a), lum(b)].sort((m,n)=>n-m);
                            return (x + .05) / (y + .05); };

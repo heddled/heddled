@@ -1,9 +1,27 @@
 {#- What Jarvis has, refreshed on its own when a turn ends. A fragment rather
     than a block of JavaScript building DOM: the server already knows how to
-    render this, and one renderer is one place for it to be wrong. -#}
+    render this, and one renderer is one place for it to be wrong.
+
+    Every list here grows without limit — a month of conversations is a lot of
+    tools — so the shape is: one filter over the whole panel, and sections that
+    fold. The filter is deliberately not per-section, because "where is that
+    postcode thing" should not require knowing first whether Jarvis called it an
+    agent or a tool. -#}
+
+{% macro section(id, title, count) %}
+  {#- `data-panel` is what the page script keys open/closed state on, and
+      `data-count` is what the filter rewrites as "3 of 12". -#}
+  <details class="panel-group" data-panel="{{ id }}" open>
+    <summary>
+      <span class="panel-title">{{ title }}</span>
+      <span class="panel-count" data-count="{{ count }}">{{ count }}</span>
+    </summary>
+    {{ caller() }}
+  </details>
+{% endmacro %}
 
 {% if budget %}
-<section class="panel-group">
+<section class="panel-group panel-fixed">
   <h2>This conversation</h2>
   <p class="panel-figure">€{{ '%.2f' | format(budget.spent) }}
     <span class="muted">of €{{ '%.2f' | format(budget.budget) }}</span></p>
@@ -17,26 +35,31 @@
   {% endif %}
   <form method="post" action="/jarvis/{{ chat_id }}/budget" class="topup">
     <label class="sr-only" for="topup">Add to this conversation's budget, in euros</label>
-    <input id="topup" name="extra" type="number" step="0.50" min="0.50"
-           value="2.00" aria-describedby="topup-hint">
+    <input id="topup" name="extra" type="number" step="0.50" min="0.50" value="2.00">
     <button class="btn tiny" type="submit">Add</button>
   </form>
-  <p class="hint" id="topup-hint">Adding is deliberate on purpose — the cap is
-    what makes carrying on a decision rather than a default.</p>
 </section>
 {% endif %}
 
-<section class="panel-group">
-  <h2>Notes it keeps</h2>
+{% if panel.agents or panel.tools or panel.memories or panel.schedules %}
+<div class="panel-find">
+  <label class="sr-only" for="panel-filter">Filter what Jarvis has</label>
+  <input id="panel-filter" type="search" placeholder="Filter by name…"
+         autocomplete="off" spellcheck="false">
+</div>
+<p class="panel-none" id="panel-none" hidden>Nothing matches that.</p>
+{% endif %}
+
+{% call section('memories', 'Notes it keeps', panel.memories | length) %}
   {% if panel.memories %}
-  <p class="hint">One line of each of these goes into every conversation; it
-    opens the ones that look relevant. Plain Markdown in
-    <code>jarvis/memory/</code>.</p>
   <ul class="panel-list">
     {% for m in panel.memories %}
-    <li>
+    <li class="panel-item" data-find="{{ m.name }} {{ m.description }}">
       <details>
-        <summary><b>{{ m.name }}</b> <span class="muted">{{ m.description }}</span></summary>
+        <summary>
+          <span class="panel-name">{{ m.name }}</span>
+          <span class="panel-note">{{ m.description }}</span>
+        </summary>
         <pre class="payload">{{ m.body }}</pre>
         <form method="post" action="/jarvis/remove" class="inline"
               data-confirm="Delete the note {{ m.name }}? It will stop carrying this into new conversations.">
@@ -49,106 +72,112 @@
     </li>
     {% endfor %}
   </ul>
+  <p class="hint">One line of each goes into every conversation; it opens the
+    ones that look relevant. Markdown in <code>jarvis/memory/</code>.</p>
   {% else %}
   <p class="panel-empty">Nothing yet. It writes one when it learns something
     worth having next time.</p>
   {% endif %}
-</section>
+{% endcall %}
 
-<section class="panel-group">
-  <h2>Agents it made</h2>
+{% call section('agents', 'Agents it made', panel.agents | length) %}
   {% if panel.agents %}
   <ul class="panel-list">
     {% for a in panel.agents %}
-    <li>
-      <div class="panel-row">
-        <span><b>{{ a.name }}</b>
-          {% if a.promoted %}<span class="badge ok">yours</span>{% endif %}</span>
-      </div>
-      <p class="muted small">{{ a.description }}</p>
-      <div class="panel-actions">
-        {% if a.promoted %}
-        <a class="btn tiny" href="/agents/{{ a.name }}">Open it</a>
-        {% else %}
-        <form method="post" action="/jarvis/promote" class="inline">
-          <input type="hidden" name="kind" value="agent">
-          <input type="hidden" name="name" value="{{ a.name }}">
-          <input type="hidden" name="chat" value="{{ chat_id or '' }}">
-          <button class="btn tiny" type="submit">Make it mine</button>
-        </form>
-        {% endif %}
-        <form method="post" action="/jarvis/remove" class="inline"
-              data-confirm="Delete the agent {{ a.name }} from Jarvis's tree?">
-          <input type="hidden" name="kind" value="agent">
-          <input type="hidden" name="name" value="{{ a.name }}">
-          <input type="hidden" name="chat" value="{{ chat_id or '' }}">
-          <button class="btn tiny danger" type="submit">Delete</button>
-        </form>
-      </div>
+    <li class="panel-item" data-find="{{ a.name }} {{ a.description }}">
+      <details>
+        <summary>
+          <span class="panel-name">{{ a.name }}</span>
+          {% if a.promoted %}<span class="badge ok">yours</span>{% endif %}
+        </summary>
+        <p class="panel-note panel-full">{{ a.description }}</p>
+        <div class="panel-do">
+          {% if a.promoted %}
+          <a class="btn tiny" href="/agents/{{ a.name }}">Open it</a>
+          {% else %}
+          <form method="post" action="/jarvis/promote" class="inline">
+            <input type="hidden" name="kind" value="agent">
+            <input type="hidden" name="name" value="{{ a.name }}">
+            <input type="hidden" name="chat" value="{{ chat_id or '' }}">
+            <button class="btn tiny" type="submit">Make it mine</button>
+          </form>
+          {% endif %}
+          <form method="post" action="/jarvis/remove" class="inline"
+                data-confirm="Delete the agent {{ a.name }} from Jarvis's tree?">
+            <input type="hidden" name="kind" value="agent">
+            <input type="hidden" name="name" value="{{ a.name }}">
+            <input type="hidden" name="chat" value="{{ chat_id or '' }}">
+            <button class="btn tiny danger" type="submit">Delete</button>
+          </form>
+        </div>
+      </details>
     </li>
     {% endfor %}
   </ul>
   {% else %}
   <p class="panel-empty">None yet.</p>
   {% endif %}
-</section>
+{% endcall %}
 
-<section class="panel-group">
-  <h2>Tools it made</h2>
+{% call section('tools', 'Tools it made', panel.tools | length) %}
   {% if panel.tools %}
   <ul class="panel-list">
     {% for t in panel.tools %}
-    <li>
-      <div class="panel-row">
-        <span><b>{{ t.name }}</b>
+    <li class="panel-item" data-find="{{ t.name }} {{ t.kind }} {{ t.description }}">
+      <details>
+        <summary>
+          <span class="panel-name">{{ t.name }}</span>
           <span class="badge {{ 'warn' if t.python }}">{{ t.kind }}</span>
-          {% if t.promoted %}<span class="badge ok">yours</span>{% endif %}</span>
-      </div>
-      <p class="muted small">{{ t.description }}</p>
-      <div class="panel-actions">
-        {% if t.promoted %}
-        <a class="btn tiny" href="/tools/{{ t.name }}">Open it</a>
-        {% else %}
-        <form method="post" action="/jarvis/promote" class="inline">
-          <input type="hidden" name="kind" value="tool">
-          <input type="hidden" name="name" value="{{ t.name }}">
-          <input type="hidden" name="chat" value="{{ chat_id or '' }}">
-          <button class="btn tiny" type="submit">Make it mine</button>
-        </form>
-        {% endif %}
-        <form method="post" action="/jarvis/remove" class="inline"
-              data-confirm="Delete the tool {{ t.name }} from Jarvis's tree?">
-          <input type="hidden" name="kind" value="tool">
-          <input type="hidden" name="name" value="{{ t.name }}">
-          <input type="hidden" name="chat" value="{{ chat_id or '' }}">
-          <button class="btn tiny danger" type="submit">Delete</button>
-        </form>
-      </div>
+          {% if t.promoted %}<span class="badge ok">yours</span>{% endif %}
+        </summary>
+        <p class="panel-note panel-full">{{ t.description }}</p>
+        <div class="panel-do">
+          {% if t.promoted %}
+          <a class="btn tiny" href="/tools/{{ t.name }}">Open it</a>
+          {% else %}
+          <form method="post" action="/jarvis/promote" class="inline">
+            <input type="hidden" name="kind" value="tool">
+            <input type="hidden" name="name" value="{{ t.name }}">
+            <input type="hidden" name="chat" value="{{ chat_id or '' }}">
+            <button class="btn tiny" type="submit">Make it mine</button>
+          </form>
+          {% endif %}
+          <form method="post" action="/jarvis/remove" class="inline"
+                data-confirm="Delete the tool {{ t.name }} from Jarvis's tree?">
+            <input type="hidden" name="kind" value="tool">
+            <input type="hidden" name="name" value="{{ t.name }}">
+            <input type="hidden" name="chat" value="{{ chat_id or '' }}">
+            <button class="btn tiny danger" type="submit">Delete</button>
+          </form>
+        </div>
+      </details>
     </li>
     {% endfor %}
   </ul>
   <p class="hint">None of these hold your keys — an action Jarvis builds is
     handed your settings with every credential removed. One marked
     <b>python</b> is code the model wrote; it runs in a child process with no
-    keys and no way back into Heddled, and it keeps doing so after you make it
-    yours.</p>
+    keys and no way back into Heddled, and keeps doing so after you take it.</p>
   {% else %}
   <p class="panel-empty">None yet.</p>
   {% endif %}
-</section>
+{% endcall %}
 
-<section class="panel-group">
-  <h2>Schedules</h2>
+{% call section('schedules', 'Schedules', panel.schedules | length) %}
   {% if panel.schedules %}
   <ul class="panel-list">
     {% for s in panel.schedules %}
-    <li><b><a href="/agents/{{ s.agent }}">{{ s.agent }}</a></b>
-      <span class="muted small">{{ s.words }}</span></li>
+    <li class="panel-item" data-find="{{ s.agent }} {{ s.words }}">
+      <div class="panel-row">
+        <span class="panel-name"><a href="/agents/{{ s.agent }}">{{ s.agent }}</a></span>
+      </div>
+      <p class="panel-note">{{ s.words }}</p>
+    </li>
     {% endfor %}
   </ul>
   {% else %}
   <p class="panel-empty">None. Jarvis cannot write one — a schedule means
-    running with nobody there, so it stays your decision. Make one of its agents
-    yours, then add a schedule on that agent's own page.</p>
+    running with nobody there, so it stays your decision. Take one of its
+    agents, then add a schedule on that agent's own page.</p>
   {% endif %}
-</section>
+{% endcall %}

@@ -104,6 +104,90 @@
   if (picker) picker.addEventListener('change', () => {
     if (picker.value) location.href = '/jarvis?chat=' + encodeURIComponent(picker.value);
   });
+
+  // ---------------------------------------------------------------- the panel
+  //
+  // The lists grow without limit, so: one filter over all of them, and sections
+  // that fold and stay folded. Written here rather than in the fragment because
+  // the fragment is replaced wholesale when a turn ends — these listeners are on
+  // the container, which survives, and the state is re-applied afterwards.
+  const panel = document.getElementById('jarvis-panel');
+  let query = '';
+
+  const remember = (name, open) => {
+    try { localStorage.setItem('jarvis-panel:' + name, open ? '1' : '0'); }
+    catch (err) { /* private window, or site data blocked. Not worth a fuss. */ }
+  };
+  const recall = (name) => {
+    try { return localStorage.getItem('jarvis-panel:' + name); }
+    catch (err) { return null; }
+  };
+
+  function applyFilter() {
+    const needle = query.trim().toLowerCase();
+    let total = 0;
+    panel.querySelectorAll('details.panel-group').forEach(group => {
+      const items = group.querySelectorAll('.panel-item');
+      let shown = 0;
+      items.forEach(item => {
+        const hit = !needle
+          || (item.dataset.find || '').toLowerCase().includes(needle);
+        item.hidden = !hit;
+        if (hit) shown++;
+      });
+      total += shown;
+      const count = group.querySelector('.panel-count');
+      if (count) {
+        const all = count.dataset.count;
+        count.textContent = needle && shown !== Number(all)
+          ? `${shown} of ${all}` : all;
+      }
+      // Prose that explains a section is noise while you are looking for one
+      // named thing, and an empty-state that says "None yet" is a lie when the
+      // truth is "none matching that".
+      group.querySelectorAll('.hint, .panel-empty').forEach(
+        el => { el.hidden = !!needle; });
+      if (needle) {
+        group.hidden = shown === 0;
+        group.open = true;
+      } else {
+        group.hidden = false;
+        group.open = recall(group.dataset.panel) !== '0';
+      }
+    });
+    const none = document.getElementById('panel-none');
+    if (none) none.hidden = !(query.trim() && total === 0);
+  }
+
+  function restore() {
+    panel.querySelectorAll('details.panel-group').forEach(group => {
+      const saved = recall(group.dataset.panel);
+      if (saved !== null) group.open = saved === '1';
+    });
+    const box = document.getElementById('panel-filter');
+    if (box) box.value = query;
+    applyFilter();
+  }
+
+  panel.addEventListener('input', (e) => {
+    if (e.target.id !== 'panel-filter') return;
+    query = e.target.value;
+    applyFilter();
+  });
+  panel.addEventListener('toggle', (e) => {
+    // Only a person's own toggle is worth remembering; the ones the filter
+    // forces open are not a preference.
+    const group = e.target.closest('details.panel-group');
+    if (group && !query.trim()) remember(group.dataset.panel, group.open);
+  }, true);
+  // Escape clears the filter, the way every other search box behaves.
+  panel.addEventListener('keydown', (e) => {
+    if (e.key === 'Escape' && e.target.id === 'panel-filter') {
+      e.target.value = ''; query = ''; applyFilter();
+    }
+  });
+  document.addEventListener('panel-refreshed', restore);
+  restore();
 </script>
 <script src="{{ url_for('static', filename='chat.js') }}"></script>
 {% endblock %}

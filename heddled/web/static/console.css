@@ -1199,12 +1199,14 @@ details.picker > summary:hover .picker-verb { text-decoration: underline; }
 
 .turn-meta {
   display: flex; align-items: center; gap: 8px;
-  font-size: 11.5px; color: var(--muted); padding: 0 4px; min-height: 18px;
+  font-size: 12px; color: var(--muted); padding: 0 4px; min-height: 24px;
 }
+/* 12px and a real hit target. It was 11.5px in a 37x21 box — under the
+   readable floor and under the 24px minimum, on the surface colleagues use. */
 .copy-reply {
-  background: none; border: 0; padding: 2px 4px; cursor: pointer;
-  color: var(--muted); font: inherit; font-size: 11.5px; opacity: 0;
-  transition: opacity .12s;
+  background: none; border: 0; padding: 4px 6px; cursor: pointer;
+  color: var(--muted); font: inherit; font-size: 12px; opacity: 0;
+  min-height: 24px; transition: opacity .12s;
 }
 .turn:hover .copy-reply, .copy-reply:focus-visible { opacity: 1; }
 .copy-reply:hover { color: var(--text); text-decoration: underline; }
@@ -1370,9 +1372,9 @@ details.picker > summary:hover .picker-verb { text-decoration: underline; }
 /* "Not right" sits beside Copy, quiet until the turn is hovered — the same
    weight as copying, because reporting a bad answer should feel as ordinary. */
 .report-reply {
-  background: none; border: 0; padding: 2px 4px; cursor: pointer;
-  color: var(--muted); font: inherit; font-size: 11.5px; opacity: 0;
-  transition: opacity .12s;
+  background: none; border: 0; padding: 4px 6px; cursor: pointer;
+  color: var(--muted); font: inherit; font-size: 12px; opacity: 0;
+  min-height: 24px; transition: opacity .12s;
 }
 .turn:hover .report-reply, .report-reply:focus-visible { opacity: 1; }
 .report-reply:hover { color: var(--text); text-decoration: underline; }
@@ -1481,24 +1483,104 @@ td.cap-cell { width: 130px; min-width: 130px; }
   border-radius: var(--radius-box); background: var(--panel);
   padding: var(--s3) var(--s4) var(--s4);
 }
-.panel-group + .panel-group { margin-top: var(--s5); padding-top: var(--s4);
+.panel-group + .panel-group { margin-top: var(--s3); padding-top: var(--s3);
                               border-top: 1px solid var(--line); }
-.panel-group h2 {
-  font-size: 12px; text-transform: uppercase; letter-spacing: .06em;
-  color: var(--muted); margin: 0 0 var(--s2);
+
+/* Every section folds, and the heading is the control. A count in the summary
+   is what makes a folded section worth folding — "Tools it made · 24" tells you
+   whether opening it is worth the scroll. */
+/* Sticky, because the panel scrolls and the twelfth tool in a list of twenty
+   looks exactly like the fourth agent without a heading above it. Sits below
+   the filter, which is stickier still. */
+details.panel-group > summary {
+  display: flex; align-items: center; gap: var(--s2); cursor: pointer;
+  list-style: none; padding: var(--s2) 0; min-height: var(--tap-sm);
+  position: sticky; top: 46px; z-index: 1; background: var(--panel);
 }
-.panel-figure { font-size: 18px; font-weight: 600; margin: 0 0 var(--s2); }
-.panel-empty { color: var(--muted); font-size: 12.5px; margin: 0; }
-.panel-list { list-style: none; margin: 0; padding: 0;
-              display: flex; flex-direction: column; gap: var(--s3); }
-.panel-list > li { min-width: 0; }
-.panel-list p { margin: 2px 0 0; }
-.panel-row { display: flex; gap: var(--s2); align-items: baseline;
-             justify-content: space-between; }
-.panel-actions { display: flex; gap: var(--s2); flex-wrap: wrap; margin-top: var(--s2); }
-.panel-list summary { cursor: pointer; }
-.panel-list details[open] summary { margin-bottom: var(--s2); }
-.panel-list .payload { max-height: 220px; }
+details.panel-group > summary::-webkit-details-marker { display: none; }
+details.panel-group > summary::before {
+  content: "›"; color: var(--muted); font-size: 14px; line-height: 1;
+  transition: transform .12s ease; transform-origin: 50% 50%;
+}
+details.panel-group[open] > summary::before { transform: rotate(90deg); }
+details.panel-group > summary:focus-visible {
+  outline: 2px solid var(--accent); outline-offset: 2px; border-radius: var(--radius);
+}
+.panel-title, .panel-group h2 {
+  font-size: 12px; text-transform: uppercase; letter-spacing: .06em;
+  color: var(--muted); margin: 0; font-weight: 600;
+}
+.panel-group h2 { margin-bottom: var(--s2); }
+.panel-count {
+  margin-left: auto; font-size: 12px; color: var(--muted);
+  font-variant-numeric: tabular-nums;
+}
+.panel-fixed { padding-bottom: var(--s2); }
+.panel-figure { font-size: 17px; font-weight: 600; margin: 0 0 var(--s2); }
+.panel-empty { color: var(--muted); font-size: 12px; margin: 0 0 var(--s2); }
+
+/* The filter over the whole panel. One box rather than one per section: you
+   should not have to know whether Jarvis filed a thing as an agent or a tool. */
+/* Sticky at the top of the panel: a filter you have to scroll back up to reach
+   is one you stop using. */
+.panel-find {
+  position: sticky; top: 0; z-index: 2; background: var(--panel);
+  padding: var(--s2) 0 var(--s1); margin: 0;
+}
+.panel-find input { width: 100%; }
+.panel-none { color: var(--muted); font-size: 12px; margin: 0 0 var(--s3); }
+
+.panel-list { list-style: none; margin: 0 0 var(--s2); padding: 0;
+              display: flex; flex-direction: column; gap: var(--s2); }
+.panel-item { min-width: 0; }
+.panel-item[hidden] { display: none; }
+.panel-row { display: flex; gap: var(--s1) var(--s2); align-items: center;
+             flex-wrap: wrap; }
+.panel-name { font-size: 13px; font-weight: 600; word-break: break-word; }
+/* Two lines, then an ellipsis. A tool whose description is a paragraph should
+   not push the next twelve off the screen; the full text is on its own page. */
+.panel-note {
+  margin: 1px 0 0; font-size: 12px; line-height: 1.45; color: var(--muted);
+  display: -webkit-box; -webkit-line-clamp: 2; -webkit-box-orient: vertical;
+  overflow: hidden;
+}
+.panel-do { display: flex; gap: var(--s1); flex-wrap: wrap; margin-top: var(--s2); }
+
+/* One line per thing until you open it. With twenty tools, a row carrying a
+   name, two badges, a description and two buttons is a wall — and the buttons
+   are the part you want least often. Folded, the panel is a list of names you
+   can scan; opened, one item shows what it is and what you can do with it. */
+.panel-list > li > details > summary {
+  display: flex; align-items: center; gap: var(--s2); cursor: pointer;
+  list-style: none; padding: var(--s1) 0; min-height: var(--tap-sm);
+}
+.panel-list > li > details > summary::-webkit-details-marker { display: none; }
+.panel-list > li > details > summary::before {
+  content: "›"; color: var(--muted); font-size: 13px; line-height: 1;
+  flex: none; transition: transform .12s ease;
+}
+.panel-list > li > details[open] > summary::before { transform: rotate(90deg); }
+.panel-list > li > details > summary:focus-visible {
+  outline: 2px solid var(--accent); outline-offset: 1px; border-radius: var(--radius);
+}
+/* The name is the identifier and truncates last. Left to shrink evenly, a note
+   called `smtp_not_set_up` rendered as `smtp_n…` while its description got the
+   room — exactly backwards, since the description is the part you can guess. */
+.panel-list > li > details > summary .panel-name {
+  flex: 0 1 auto; max-width: 62%;
+  overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
+}
+.panel-list > li > details > summary .panel-note {
+  flex: 1 1 0; min-width: 0; margin: 0; -webkit-line-clamp: 1;
+}
+/* Opened, the description is the point — no clamp. */
+.panel-full { -webkit-line-clamp: none; display: block; }
+.panel-list .payload { max-height: 220px; font-size: 12px; }
+
+@media (prefers-reduced-motion: reduce) {
+  details.panel-group > summary::before,
+  .panel-list > li > details > summary::before { transition: none; }
+}
 
 .topup { display: flex; gap: var(--s2); align-items: center; margin-top: var(--s2); }
 .topup input { flex: 0 1 7rem; min-width: 0; }

@@ -373,9 +373,17 @@ async function refreshPanel() {
   if (!PANEL) return;
   const target = document.getElementById('jarvis-panel');
   if (!target) return;
+  const scroll = target.scrollTop;
   try {
     const r = await fetch(PANEL + (threadId ? `?chat=${encodeURIComponent(threadId)}` : ''));
-    if (r.ok) target.innerHTML = await r.text();
+    if (!r.ok) return;
+    target.innerHTML = await r.text();
+    // Rebuilt markup has none of the state the reader put there — which
+    // section they folded, what they typed in the filter, where they had
+    // scrolled to. The page puts it back; without this, a turn ending yanks
+    // the panel out from under whoever was reading it.
+    target.scrollTop = scroll;
+    document.dispatchEvent(new CustomEvent('panel-refreshed'));
   } catch (err) { /* the panel is a convenience; the conversation is the page */ }
 }
 
