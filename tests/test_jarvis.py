@@ -931,6 +931,79 @@ class TestTheDoor:
         assert "never change them" in page
 
 
+class TestItsSettingsAreNotTreatedAsSecrets:
+    """`redacted_settings` masks anything the console does not recognise, and the
+    Jarvis keys were recognised nowhere — so a boolean was shown to its owner as
+    a row of dots, and a model name was listed among their own credentials."""
+
+    def test_the_page_does_not_mask_them(self, client, store):
+        store.set_setting(jarvis.SETTING, True)
+        store.set_setting(jarvis.MODEL_SETTING, "anthropic/claude-sonnet-4-6")
+        page = client.get("/settings").get_data(as_text=True)
+        block = page[page.index("<h2>All settings</h2>"):]
+        assert "anthropic/claude-sonnet-4-6" in block
+        assert "\u2022" not in block.split("jarvis_enabled")[1][:40]
+
+    def test_they_are_not_listed_among_the_operators_own_secrets(self, client, store):
+        """Through the page, not the helper: the bug was the wiring, so a test
+        that calls `user_secrets` itself passes with the wiring still wrong."""
+        store.set_setting(jarvis.MODEL_SETTING, "anthropic/claude-sonnet-4-6")
+        store.set_setting("my_own_thing", "kept")
+        page = client.get("/settings").get_data(as_text=True)
+        block = page[page.index("<h2>Secrets</h2>"):]
+        block = block[:block.index("</section>")]
+        assert "my_own_thing" in block
+        assert "jarvis_" not in block
+
+    def test_a_real_credential_is_still_masked(self, client, store):
+        """The fix must not turn the redaction off for anything that matters."""
+        store.set_setting("anthropic_api_key", "sk-ant-THE-REAL-KEY")
+        page = client.get("/settings").get_data(as_text=True)
+        assert "sk-ant-THE-REAL-KEY" not in page
+
+    def test_the_two_lists_stay_apart(self):
+        """KNOWN_SETTINGS means 'rendered by the groups'. The Jarvis card renders
+        its own, and a key in both would render twice."""
+        from heddled.web.app import CARD_SETTINGS, KNOWN_SETTINGS
+
+        grouped = {k for k, _ in KNOWN_SETTINGS}
+        carded = {k for k, _ in CARD_SETTINGS}
+        assert not grouped & carded
+        assert carded == {jarvis.SETTING, jarvis.MODEL_SETTING, jarvis.BUDGET_SETTING,
+                          jarvis.STEPS_SETTING, jarvis.SCHEDULE_BUDGET_SETTING}
+
+
+class TestItReadsAsJarvisInActivity:
+    def test_the_channel_has_words_of_its_own(self):
+        """Every other channel gets plain English; this one showed the internal
+        token to whoever opened Activity."""
+        from heddled.web.app import ORIGIN_WORDS
+
+        assert ORIGIN_WORDS[jarvis.CHANNEL] == "Jarvis"
+
+    def test_activity_shows_them(self, client, store):
+        """Asserted on the badge, not on the page: the nav says "Jarvis" too when
+        the setting is on, so a bare substring check passes either way."""
+        store.set_setting(jarvis.SETTING, True)
+        jarvis.start_chat("build a thing", "tester")
+        page = client.get("/sessions").get_data(as_text=True)
+        assert '<span class="badge">Jarvis</span>' in page
+        assert '<span class="badge">jarvis</span>' not in page
+
+
+class TestTheSettingsCardDescribesWhatItIsNow:
+    def test_it_no_longer_promises_an_autonomous_loop(self, client, store):
+        """It described the design that was replaced: runs, a step cap, and a
+        loop going until the money ran out."""
+        page = client.get("/settings").get_data(as_text=True)
+        card = page[page.index("<h2>Jarvis</h2>"):]
+        card = card[:card.index("</section>")]
+        assert "let runs be started" not in card
+        assert "keeps going until" not in card
+        assert "conversations be started" in card
+        assert "You answer every turn" in card
+
+
 class TestTheConversation:
     @pytest.fixture()
     def on(self, store):

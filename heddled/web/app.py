@@ -80,6 +80,7 @@ ORIGIN_WORDS = {
     "agent": "another agent",
     "eval": "a test run",
     "slack": "Slack",
+    "jarvis": "Jarvis",
 }
 
 # Offered in the model picker, grouped by the service that serves them. Free
@@ -173,6 +174,26 @@ KNOWN_SETTINGS = [
     ("otel_headers", 'OpenTelemetry headers, e.g. {"authorization": "Bearer …"}'),
     ("otel_service_name", "OpenTelemetry service name (default: heddled)"),
 ]
+
+# Settings this page renders somewhere other than the grouped grid — the Jarvis
+# card has its own. They are still *known*, which is the part that matters
+# downstream: `redacted_settings` masks anything it does not recognise, so
+# leaving these out showed `jarvis_enabled` as "••••••••" in the All settings
+# block and listed a model name among the operator's own secrets. A boolean is
+# not a credential, and hiding it from the person who set it helps nobody.
+#
+# Deliberately not folded into KNOWN_SETTINGS: that list means "rendered by the
+# groups below", and test_settings_groups_cover_every_setting holds it to that.
+CARD_SETTINGS = [
+    ("jarvis_enabled", "Jarvis is switched on"),
+    ("jarvis_model", "Model Jarvis thinks with"),
+    ("jarvis_budget_eur", "What a Jarvis conversation may spend"),
+    ("jarvis_max_steps", "Steps Jarvis may take before reporting back"),
+    ("jarvis_schedule_budget_eur", "What Jarvis's schedules may spend in a day"),
+]
+
+#: Every setting the console knows the name of, however it renders it.
+NAMED_SETTINGS = KNOWN_SETTINGS + CARD_SETTINGS
 
 # How the settings page is grouped. One long undifferentiated list made it hard
 # to find anything; these are the questions people actually arrive with. Every
@@ -1187,9 +1208,9 @@ def register_console(app: Flask) -> None:
             git=gitio.status(),
             auth_status=auth.status(store),
             secretish=auth.is_credential,
-            safe_settings=auth.redacted_settings(store, [k for k, _ in KNOWN_SETTINGS]),
+            safe_settings=auth.redacted_settings(store, [k for k, _ in NAMED_SETTINGS]),
             secrets={k: auth.mask(v)
-                     for k, v in auth.user_secrets(store, [k for k, _ in KNOWN_SETTINGS]).items()},
+                     for k, v in auth.user_secrets(store, [k for k, _ in NAMED_SETTINGS]).items()},
             error=request.args.get("error"),
             saved=request.args.get("saved"),
             retention_days=config.KEEP_FULL_CONTEXT_DAYS,

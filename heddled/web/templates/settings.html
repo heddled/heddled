@@ -149,14 +149,16 @@
 <section class="card" id="jarvis">
   <h2>Jarvis</h2>
   <p class="muted small">Off, and it should stay off unless you want it. Jarvis is
-    the opposite of everything else here: an autonomous loop that writes its own
-    tools, writes its own agents, runs them, and keeps going until it thinks it is
-    finished or the money runs out. It is not how you build something you intend
-    to rely on — it is a way to find out what a goal would take.</p>
+    the opposite of everything else here: you talk to it and it writes its own
+    tools, writes its own agents and tries them, in a tree of its own that nothing
+    else can see. You answer every turn, so it stops when you stop — what it
+    cannot spend past is the conversation's budget. It is not how you build
+    something you intend to rely on; it is a way to find out what a goal would
+    take.</p>
   <form method="post" action="/settings/jarvis">
     <label class="check">
       <input type="checkbox" name="enabled" {{ 'checked' if jarvis_on }}>
-      Show the Jarvis tab and let runs be started
+      Show the Jarvis tab and let conversations be started
     </label>
     <div class="setting-rows">
       <div class="setting-row">
