@@ -17,30 +17,43 @@
 {% if tab == 'files' %}
 <div class="bench-body">
   {#- `jarvis/work`, not the absolute path: four wrapped lines of
-      /tmp/…/scratchpad/bench/jarvis/work told nobody anything they needed. -#}
-  <p class="bench-note">Everything in <code>jarvis/work</code> — what the file
-    tools write, what the terminal runs in, and where a script leaves its
-    output.</p>
-  {% if files %}
-  {#- A grid, so the sizes and the buttons line up down the column instead of
-      landing wherever the filename happens to end. -#}
-  <ul class="file-list">
-    {% for f in files %}
-    <li>
-      <a class="file-name" href="/jarvis/files/view?path={{ f.path | urlencode }}&chat={{ chat_id }}">{{ f.path }}</a>
-      <span class="file-size">{{ f.bytes | filesize }}</span>
-      <form method="post" action="/jarvis/files" class="inline"
-            data-confirm="Delete {{ f.path }}? Jarvis cannot undo this and neither can you.">
-        <input type="hidden" name="delete" value="{{ f.path }}">
-        <input type="hidden" name="chat" value="{{ chat_id }}">
-        <button class="btn tiny danger" type="submit">Delete</button>
-      </form>
-    </li>
-    {% endfor %}
-  </ul>
+      /tmp/…/scratchpad/bench/jarvis/work told nobody anything they needed.
+      Dotfiles are not listed — a shell in here leaves a .cache tree behind it,
+      and nobody can find their own CSV in that. -#}
+  <p class="bench-note">Everything in <code>jarvis/work</code>, shared with the
+    terminal. Drop a file in and it lands in <code>data/</code>; look for what
+    Jarvis made in <code>out/</code>.</p>
+  {% if file_groups %}
+  {% for group in file_groups %}
+  <div class="file-group">
+    {#- The name only. What each folder is for is in the line above, in the
+        README beside the files, and in Jarvis's own instructions — repeating
+        it four times here cost three lines a folder in a 360px pane. It stays
+        as the title, for anyone who wants reminding. -#}
+    <p class="file-folder" title="{{ group.what }}">
+      <code>{{ group.name ~ '/' if group.name else '·' }}</code>
+    </p>
+    {#- A grid, so the sizes and the buttons line up down the column instead of
+        landing wherever the filename happens to end. -#}
+    <ul class="file-list">
+      {% for f in group.files %}
+      <li>
+        <a class="file-name" href="/jarvis/files/view?path={{ f.path | urlencode }}&chat={{ chat_id }}">{{ f.label }}</a>
+        <span class="file-size">{{ f.bytes | filesize }}</span>
+        <form method="post" action="/jarvis/files" class="inline"
+              data-confirm="Delete {{ f.path }}? Jarvis cannot undo this and neither can you.">
+          <input type="hidden" name="delete" value="{{ f.path }}">
+          <input type="hidden" name="chat" value="{{ chat_id }}">
+          <button class="btn tiny danger" type="submit">Delete</button>
+        </form>
+      </li>
+      {% endfor %}
+    </ul>
+  </div>
+  {% endfor %}
   {% else %}
   <p class="panel-empty">Empty. Ask Jarvis to write something, or add a file
-    for it to work on.</p>
+    for it to work on — it lands in <code>data/</code>.</p>
   {% endif %}
 
   {#- Pinned to the bottom of the pane rather than floating under the last row,

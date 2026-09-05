@@ -147,6 +147,13 @@ def listing(root: Path) -> list[dict]:
             break
         if not path.is_file() or path.is_symlink():
             continue
+        # Dotfiles are machinery, not working material. A shell in the
+        # workspace leaves `.python_history` and a `.cache` tree of hundreds of
+        # files behind it, and a list of those is a list nobody can find their
+        # own CSV in. Named directly they still read and write — this hides
+        # them, it does not fence them off.
+        if any(part.startswith(".") for part in path.relative_to(root).parts):
+            continue
         try:
             resolved = path.resolve()
             if root not in resolved.parents:

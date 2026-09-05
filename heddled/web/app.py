@@ -2213,6 +2213,21 @@ def register_api(app: Flask) -> None:
                                **_bench(request.args.get("tab"),
                                         request.args.get("chat")))
 
+    def _by_folder(files: list) -> list:
+        """The workspace as its folders, in the order the work moves through
+        them. A flat list put a script, the CSV it reads and the report it
+        wrote in one column with nothing to say which was which."""
+        order = list(jarvis.WORK_FOLDERS) + [""]
+        groups: dict = {name: [] for name in order}
+        for entry in files:
+            head, _, rest = entry["path"].partition("/")
+            folder = head if rest and head in groups else ""
+            groups.setdefault(folder, []).append(
+                {**entry, "label": rest if folder else entry["path"]})
+        return [{"name": name, "what": jarvis.WORK_FOLDERS.get(name, ""),
+                 "files": groups[name]}
+                for name in order if groups.get(name)]
+
     def _threads():
         return [{"id": c["id"], "title": c["goal"], "at": c["created_at"],
                  "status": c["status"]} for c in jarvis.chats()]
@@ -2225,13 +2240,14 @@ def register_api(app: Flask) -> None:
         from .. import jarvis_shell
 
         tab = tab if tab in ("files", "terminal", "browser") else "files"
+        jarvis.ensure_tree()
         root = jarvis.work_dir()
-        root.mkdir(parents=True, exist_ok=True)
         page = jarvis.last_page()
         return {
             "tab": tab,
             "chat_id": chat_id or "",
-            "files": workspace.listing(root),
+            "file_groups": _by_folder(workspace.listing(root)),
+            "folders": jarvis.WORK_FOLDERS,
             "work": str(root),
             "shell": jarvis_shell.health(),
             "console": jarvis.console(limit=30, kind="command"),
@@ -2300,8 +2316,12 @@ def register_api(app: Flask) -> None:
             if request.form.get("delete"):
                 workspace.delete(jarvis.work_dir(), request.form["delete"])
             elif upload and upload.filename:
-                workspace.store_upload(jarvis.work_dir(), upload.filename,
-                                       upload.read())
+                # Into `data/`, which is where Jarvis is told to read from.
+                # Dropped in the root it would sit outside the shape and the
+                # agent would have to be told about it separately.
+                jarvis.ensure_tree()
+                workspace.store_upload(jarvis.work_dir() / "data",
+                                       upload.filename, upload.read())
         except workspace.WorkspaceError as exc:
             return _back_to(chat_id, problem=str(exc))
         return _back_to(chat_id, tab="files")

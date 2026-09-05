@@ -38,6 +38,8 @@ from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from pathlib import Path
 
 WORK = Path(os.environ.get("SANDBOX_WORK", "/work"))
+#: Container-local, deliberately not the shared volume.
+HOME = os.environ.get("SANDBOX_HOME", "/home/jarvis")
 PORT = int(os.environ.get("SANDBOX_PORT", "8080"))
 DEFAULT_TIMEOUT_S = int(os.environ.get("SANDBOX_TIMEOUT_S", "120"))
 MAX_TIMEOUT_S = 600
@@ -69,7 +71,11 @@ def run(command: str, timeout_s: int) -> dict:
     # command whatever the container happens to have been started with.
     env = {
         "PATH": "/usr/local/bin:/usr/bin:/bin",
-        "HOME": str(WORK),
+        # Not the workspace. With HOME there, `pip install` writes a .cache
+        # tree of hundreds of files into the directory the operator opens to
+        # find their own CSV — through a bind mount, onto their disk. HOME is
+        # inside the container, where a cache belongs.
+        "HOME": HOME,
         "TERM": "dumb",
         "LANG": "C.UTF-8",
         "PYTHONUNBUFFERED": "1",
@@ -169,7 +175,7 @@ def take_the_workspace_then_drop() -> None:
         os.setgroups([gid])
         os.setgid(gid)
         os.setuid(uid)
-        os.environ["HOME"] = str(WORK)
+        os.environ["HOME"] = HOME
 
 
 if __name__ == "__main__":

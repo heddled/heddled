@@ -174,9 +174,44 @@ def work_dir() -> Path:
     return root() / "work"
 
 
+#: The shape of the workspace, and what each part is for.
+#:
+#: Given one flat directory, a model puts a script, the CSV it was given, the
+#: report it produced and a scratch file in the same list, and by the fourth
+#: task nobody can tell which is which. Four folders is enough structure to
+#: answer "where does this go" every time and few enough to remember.
+WORK_FOLDERS = {
+    "data": "Files you were given, and anything you fetched. Read from here.",
+    "scripts": "Code you wrote. Run it from here with run_command.",
+    "out": "What you made for the operator — reports, exports, documents.",
+    "tmp": "Scratch. Nobody reads this; leave your mess here rather than in out/.",
+}
+
+WORK_README = """\
+# Jarvis's workspace
+
+Shared between three things that are the same directory seen three ways: the
+file tools Jarvis writes with, the terminal it runs commands in, and the Files
+tab beside the conversation.
+
+    data/     files you were given, and anything fetched
+    scripts/  code Jarvis wrote
+    out/      what it made for you
+    tmp/      scratch, nobody reads it
+
+Anything you drop into `data/` is something Jarvis can read. Anything you want
+back, look for in `out/`.
+"""
+
+
 def ensure_tree() -> None:
     for path in (agents_dir(), tools_dir(), memory_dir(), work_dir()):
         path.mkdir(parents=True, exist_ok=True)
+    for folder in WORK_FOLDERS:
+        (work_dir() / folder).mkdir(exist_ok=True)
+    readme = work_dir() / "README.md"
+    if not readme.exists():
+        readme.write_text(WORK_README, encoding="utf-8")
 
 
 def registry() -> Registry:
@@ -650,19 +685,28 @@ How to work:
    can, and say so plainly if there is none: "I have no way to send mail, and
    you have no agent that can either — give one an email action and I can ask
    it." That is a more useful answer than a list of your limitations.
-6. `make_schedule` puts one of your agents on a cron so it runs on its own.
+6. Your workspace has a shape, and keeping to it is what makes it readable to
+   the person watching:
+   - `data/` — what they gave you, and anything you fetched. Read from here.
+   - `scripts/` — the code you write. Run it from here.
+   - `out/` — what you made for them. Only finished things go here.
+   - `tmp/` — scratch. Leave your mess here rather than in `out/`.
+   So the loop is: `write_file` a script into `scripts/`, `run_command` it,
+   read what it printed, and put the result in `out/`. Say where you put
+   something when you are done — they look in `out/`.
+7. `make_schedule` puts one of your agents on a cron so it runs on its own.
    Only do this when they ask for it, only after `run_own_agent` showed the
    agent works, and no more often than the job needs — nobody is watching a
    scheduled run, and everything you schedule shares one small daily budget.
    Say plainly what you scheduled and when it will fire.
-7. You have a **terminal** (`run_command`) and a **reader** (`read_page`).
+8. You have a **terminal** (`run_command`) and a **reader** (`read_page`).
    The terminal is a container of your own that shares the `work` directory
    with your file tools, so the loop that actually works is: write a script
    with `write_file`, run it with `run_command`, read what it printed, fix it.
    Prefer that over reasoning about what code would do. `read_page` fetches a
    page's text when you need to look something up — an API's docs, a format
    you are unsure of.
-8. Use `remember` when you learn something worth having next time — how their
+9. Use `remember` when you learn something worth having next time — how their
    systems are shaped, what they prefer, what turned out to be a dead end. Not
    a diary: the conversation is already recorded. One fact per note.
 

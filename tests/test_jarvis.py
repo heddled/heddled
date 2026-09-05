@@ -967,6 +967,115 @@ class TestTheWorkbench:
         assert client.get("/jarvis/bench?tab=nonsense").status_code == 200
 
 
+class TestTheWorkspaceHasAShape:
+    """Given one flat directory a model puts the script, the CSV it reads and
+    the report it wrote in one list, and by the fourth task nobody can tell
+    which is which."""
+
+    def test_the_folders_are_made(self, store, chat):
+        jarvis.ensure_tree()
+        made = {p.name for p in jarvis.work_dir().iterdir() if p.is_dir()}
+        assert made == set(jarvis.WORK_FOLDERS)
+
+    def test_a_readme_explains_it_to_whoever_opens_the_folder(self, store, chat):
+        jarvis.ensure_tree()
+        readme = (jarvis.work_dir() / "README.md").read_text()
+        for folder in jarvis.WORK_FOLDERS:
+            assert folder in readme
+
+    def test_a_readme_somebody_edited_is_left_alone(self, store, chat):
+        jarvis.ensure_tree()
+        readme = jarvis.work_dir() / "README.md"
+        readme.write_text("mine now")
+        jarvis.ensure_tree()
+        assert readme.read_text() == "mine now"
+
+    def test_jarvis_is_told_where_things_go(self, store, chat):
+        jarvis.write_driver()
+        told = (jarvis.agents_dir() / "jarvis.md").read_text()
+        for folder in jarvis.WORK_FOLDERS:
+            assert f"`{folder}/`" in told
+
+    def test_an_uploaded_file_lands_where_it_is_told_to_read(self, client, store, chat):
+        """`data/` is where the instructions say to read from. Dropped in the
+        root it would sit outside the shape and have to be pointed out."""
+        import io
+
+        store.set_setting(jarvis.SETTING, True)
+        client.post("/jarvis/files", data={
+            "chat": chat, "file": (io.BytesIO(b"a,b\n1,2\n"), "export.csv")},
+            content_type="multipart/form-data")
+        assert (jarvis.work_dir() / "data" / "export.csv").is_file()
+
+    def test_the_pane_groups_by_folder(self, client, store, chat):
+        from heddled import workspace
+
+        store.set_setting(jarvis.SETTING, True)
+        jarvis.ensure_tree()
+        workspace.write(jarvis.work_dir(), "scripts/run.py", "print(1)")
+        workspace.write(jarvis.work_dir(), "out/report.md", "# done")
+        page = client.get(f"/jarvis/bench?tab=files&chat={chat}").get_data(as_text=True)
+        assert "scripts/" in page and "out/" in page
+        # Grouped, so the folder is the heading and the name is the row.
+        assert ">run.py</a>" in page and ">report.md</a>" in page
+
+
+class TestHiddenFilesStayHidden:
+    """A shell with the workspace as its home leaves `.python_history` and a
+    `.cache` tree of hundreds of files, and a list of those is a list nobody
+    can find their own CSV in."""
+
+    def test_dotfiles_are_not_listed(self, store, chat):
+        from heddled import workspace
+
+        jarvis.ensure_tree()
+        root = jarvis.work_dir()
+        workspace.write(root, "notes.txt", "mine")
+        (root / ".python_history").write_text("import os")
+        (root / ".cache").mkdir(exist_ok=True)
+        (root / ".cache" / "wheel.json").write_text("{}")
+
+        listed = {f["path"] for f in workspace.listing(root)}
+        assert "notes.txt" in listed
+        assert not [p for p in listed if p.startswith(".") or "/." in p]
+
+    def test_a_dotfile_inside_a_visible_folder_is_hidden_too(self, store, chat):
+        from heddled import workspace
+
+        jarvis.ensure_tree()
+        root = jarvis.work_dir()
+        (root / "scripts" / ".env").write_text("SECRET=1")
+        workspace.write(root, "scripts/run.py", "print(1)")
+        listed = {f["path"] for f in workspace.listing(root)}
+        assert "scripts/run.py" in listed and "scripts/.env" not in listed
+
+    def test_hidden_is_not_fenced_off(self, store, chat):
+        """Named directly they still read and write. This is tidying, not a
+        security boundary — the confinement is `safe_path`, unchanged."""
+        from heddled import workspace
+
+        jarvis.ensure_tree()
+        root = jarvis.work_dir()
+        (root / ".keep").write_text("still here")
+        assert workspace.read(root, ".keep") == "still here"
+
+    def test_the_pane_does_not_show_them(self, client, store, chat):
+        store.set_setting(jarvis.SETTING, True)
+        jarvis.ensure_tree()
+        (jarvis.work_dir() / ".python_history").write_text("import os")
+        page = client.get(f"/jarvis/bench?tab=files&chat={chat}").get_data(as_text=True)
+        assert ".python_history" not in page
+
+    def test_the_sandbox_keeps_its_home_out_of_the_workspace(self):
+        """The root cause: with HOME in the shared volume, `pip install` writes
+        its cache through the bind mount onto the operator's disk."""
+        import pathlib as _p
+
+        source = _p.Path("sandbox/server.py").read_text()
+        assert 'HOME = os.environ.get("SANDBOX_HOME", "/home/jarvis")' in source
+        assert '"HOME": str(WORK)' not in source
+
+
 class TestTheInventoryAndDiscarding:
     def test_it_shows_everything_not_only_this_conversation(self, store, chat):
         """What it built last week is still what it has, and a panel that forgot

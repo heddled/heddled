@@ -1527,6 +1527,10 @@ td.cap-cell { width: 130px; min-width: 130px; }
                                  border-top: 1px solid var(--line); }
 .inline-menu .menu .topup input { width: 6rem; }
 
+.file-group + .file-group { margin-top: var(--s3); }
+.file-folder { margin: 0 0 var(--s1); font-size: 12px; }
+.file-folder code { font-size: 12px; padding: 1px 5px; }
+
 /* The file list, as a grid so sizes and buttons line up down the column
    instead of landing wherever each filename happens to end. */
 .file-list { list-style: none; margin: 0; padding: 0; }
