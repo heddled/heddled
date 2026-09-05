@@ -61,6 +61,39 @@ from ..worker import ensure_worker
 
 HERE = Path(__file__).parent
 
+
+def _as_download(body: bytes, name: str) -> "Response":
+    """Serve bytes from a workspace as a download, and never as a page.
+
+    This hands back whatever somebody — or a model — put in the folder, from
+    the console's own origin, which is the origin holding the administrator's
+    session. Served inline, an uploaded `.html` would run as a page on it. So:
+    a fixed content type that is not html, `attachment`, and nosniff, which
+    between them leave the browser nothing to interpret.
+
+    The filename is built, not interpolated. A name is whatever the filesystem
+    accepts: a quote silently truncates the header, and a newline is refused by
+    Werkzeug outright — turning a file Jarvis could write into a 500 on the
+    download button. An ASCII fallback carries the awkward ones, and RFC 5987
+    carries the real name for browsers that read it.
+    """
+    from urllib.parse import quote
+
+    name = Path(name).name or "download"
+    plain = re.sub(r"[^A-Za-z0-9._ -]", "_", name)[:120] or "download"
+    return Response(
+        body,
+        mimetype="application/octet-stream",
+        headers={
+            "Content-Disposition": (
+                f'attachment; filename="{plain}"; '
+                f"filename*=UTF-8''{quote(name, safe='')}"),
+            "X-Content-Type-Options": "nosniff",
+            "Content-Security-Policy": "default-src 'none'",
+        },
+    )
+
+
 # Plain readings of the platform's own status and origin words. The stored
 # values never change — only what a person reads.
 STATUS_WORDS = {
@@ -2006,30 +2039,14 @@ def register_api(app: Flask) -> None:
 
     @app.route("/agents/<name>/files/download")
     def workspace_download(name):
-        """Always an attachment, never rendered.
-
-        This serves whatever somebody put in the folder, from the console's own
-        origin — the origin holding the administrator's session. Served inline,
-        an uploaded .html would run as a page on that origin. So: a fixed
-        content type that is not html, `attachment`, and nosniff, which between
-        them leave the browser nothing to interpret.
-        """
+        """Always an attachment, never rendered — see `_as_download`."""
         agent, root = _agent_workspace(name)
         given = request.args.get("path", "")
         try:
             path = workspace.safe_path(root, given, must_exist=True)
         except workspace.WorkspaceError as exc:
             return render_template("error.html", message=str(exc), code=400), 400
-        return Response(
-            path.read_bytes(),
-            mimetype="application/octet-stream",
-            headers={
-                "Content-Disposition":
-                    f'attachment; filename="{Path(given).name}"',
-                "X-Content-Type-Options": "nosniff",
-                "Content-Security-Policy": "default-src 'none'",
-            },
-        )
+        return _as_download(path.read_bytes(), given)
 
     @app.route("/agents/<name>/files", methods=["POST"])
     def workspace_change(name):
@@ -2306,6 +2323,19 @@ def register_api(app: Flask) -> None:
             return _back_to(request.args.get("chat") or "", problem=str(exc))
         return render_template("jarvis_file.html", path=path, body=body,
                                chat_id=request.args.get("chat") or "")
+
+    @app.route("/jarvis/files/download")
+    def jarvis_file_download():
+        """The same as an agent's, over Jarvis's own workspace: whatever it
+        built is a file you can take away, not only one you can read on a
+        screen."""
+        _jarvis_on()
+        given = request.args.get("path", "")
+        try:
+            path = workspace.safe_path(jarvis.work_dir(), given, must_exist=True)
+        except workspace.WorkspaceError as exc:
+            return render_template("error.html", message=str(exc), code=400), 400
+        return _as_download(path.read_bytes(), given)
 
     @app.route("/jarvis/files", methods=["POST"])
     def jarvis_file_add():

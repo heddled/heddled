@@ -40,12 +40,16 @@
       <li>
         <a class="file-name" href="/jarvis/files/view?path={{ f.path | urlencode }}&chat={{ chat_id }}">{{ f.label }}</a>
         <span class="file-size">{{ f.bytes | filesize }}</span>
+        <span class="file-do">
+          <a class="btn tiny" href="/jarvis/files/download?path={{ f.path | urlencode }}"
+             download="{{ f.label }}">Download</a>
         <form method="post" action="/jarvis/files" class="inline"
               data-confirm="Delete {{ f.path }}? Jarvis cannot undo this and neither can you.">
           <input type="hidden" name="delete" value="{{ f.path }}">
           <input type="hidden" name="chat" value="{{ chat_id }}">
           <button class="btn tiny danger" type="submit">Delete</button>
         </form>
+        </span>
       </li>
       {% endfor %}
     </ul>

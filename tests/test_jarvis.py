@@ -948,6 +948,68 @@ class TestTheWorkbench:
         page = client.get(f"/jarvis/files/view?path=notes.txt&chat={chat}")
         assert "the body of it" in page.get_data(as_text=True)
 
+    def test_a_file_can_be_downloaded(self, client, on, chat):
+        from heddled import workspace
+
+        jarvis.ensure_tree()
+        workspace.write(jarvis.work_dir(), "out/report.md", "# the report")
+        answer = client.get("/jarvis/files/download?path=out/report.md")
+        assert answer.status_code == 200
+        assert answer.data == b"# the report"
+
+    def test_a_download_is_never_a_page(self, client, on, chat):
+        """It serves whatever a model wrote, from the origin holding the
+        administrator's session. Inline, an .html Jarvis produced would run
+        there as a page."""
+        from heddled import workspace
+
+        jarvis.ensure_tree()
+        workspace.write(jarvis.work_dir(), "out/x.html",
+                        "<script>alert(1)</script>")
+        answer = client.get("/jarvis/files/download?path=out/x.html")
+        assert answer.mimetype == "application/octet-stream"
+        assert answer.headers["Content-Disposition"].startswith("attachment;")
+        assert answer.headers["X-Content-Type-Options"] == "nosniff"
+        assert "html" not in answer.headers["Content-Type"]
+
+    def test_an_awkward_filename_does_not_break_the_header(self, client, on, chat):
+        """A name is whatever the filesystem accepts, and Jarvis writes the
+        names. A quote silently truncated the header; a newline made Werkzeug
+        refuse it outright, so the download button on a file Jarvis had written
+        answered 500."""
+        jarvis.ensure_tree()
+        for name in ('quote".txt', "crlf\r\nX-Injected: yes.txt", "héllo wörld.txt"):
+            path = jarvis.work_dir() / "out" / name
+            path.write_text("payload")
+            answer = client.get("/jarvis/files/download",
+                                query_string={"path": f"out/{name}"})
+            assert answer.status_code == 200, name
+            assert answer.data == b"payload"
+            assert answer.headers.get("X-Injected") is None
+            disposition = answer.headers["Content-Disposition"]
+            assert "\r" not in disposition and "\n" not in disposition
+
+    def test_the_download_cannot_escape_the_workspace(self, client, on, chat):
+        answer = client.get("/jarvis/files/download?path=../../agents/support.yaml")
+        assert answer.status_code == 400
+        assert b"Invoice and billing" not in answer.data
+
+    def test_downloading_is_admin_only(self, client_as, store, chat):
+        store.set_setting(jarvis.SETTING, True)
+        assert client_as("member").get(
+            "/jarvis/files/download?path=README.md").status_code == 403
+
+    def test_the_pane_offers_the_button(self, client, on, chat):
+        from heddled import workspace
+
+        jarvis.ensure_tree()
+        workspace.write(jarvis.work_dir(), "out/report.md", "# the report")
+        page = client.get(f"/jarvis/bench?tab=files&chat={chat}").get_data(as_text=True)
+        # Jinja's urlencode leaves `/` alone — legal, and unambiguous in a
+        # query value.
+        assert "/jarvis/files/download?path=out/report.md" in page
+        assert ">Download</a>" in page
+
     def test_the_file_pane_cannot_escape_the_workspace(self, client, on, chat):
         answer = client.get("/jarvis/files/view?path=../../agents/support.yaml",
                             follow_redirects=True)
