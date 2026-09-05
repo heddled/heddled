@@ -11,18 +11,32 @@
   <h1>Jarvis</h1>
   <div class="page-actions">
     {% if chat_id %}
-    <span class="muted small budget-chip"
-          title="What this conversation has spent of its budget">
-      €{{ '%.2f' | format(budget.spent) }} of €{{ '%.2f' | format(budget.budget) }}</span>
-    <form method="post" action="/jarvis/{{ chat_id }}/budget" class="inline topup">
-      <label class="sr-only" for="topup">Add to this conversation's budget, in euros</label>
-      <input id="topup" name="extra" type="number" step="0.50" min="0.50" value="2.00">
-      <button class="btn tiny" type="submit">Add</button>
-    </form>
-    <form method="post" action="/jarvis/{{ chat_id }}/discard" class="inline"
-          data-confirm="Discard this conversation and delete everything it made that you have not made yours? This cannot be undone.">
-      <button class="btn tiny danger" type="submit">Discard</button>
-    </form>
+    <span class="budget-chip {{ 'hot' if budget.pct >= 80 }}"
+          title="{{ budget.pct }}% of what this conversation may spend">
+      <span class="budget-figure">€{{ '%.2f' | format(budget.spent) }}
+        <span class="muted">of €{{ '%.2f' | format(budget.budget) }}</span></span>
+      <span class="cap-bar"><span class="cap-fill {{ 'hot' if budget.pct >= 80 }}"
+            style="width: {{ budget.pct }}%"></span></span>
+    </span>
+    {#- Topping up and discarding are both rare and one of them is destructive,
+        so neither earns a permanent seat in the header. -#}
+    <details class="inline-menu">
+      <summary class="btn tiny">This conversation</summary>
+      <div class="menu">
+        <form method="post" action="/jarvis/{{ chat_id }}/budget" class="topup">
+          <label for="topup">Add to its budget</label>
+          <div class="row">
+            <input id="topup" name="extra" type="number" step="0.50" min="0.50"
+                   value="2.00" aria-label="Euros to add">
+            <button class="btn tiny" type="submit">Add</button>
+          </div>
+        </form>
+        <form method="post" action="/jarvis/{{ chat_id }}/discard"
+              data-confirm="Discard this conversation and delete everything it made that you have not made yours? This cannot be undone.">
+          <button class="btn tiny danger" type="submit">Discard the conversation</button>
+        </form>
+      </div>
+    </details>
     {% endif %}
     <a class="btn tiny" href="/settings#jarvis">Settings</a>
   </div>
@@ -33,8 +47,16 @@
 
 <div class="jarvis-grid">
 
+  {#- The toggle and the body are separate on purpose: a finished turn swaps the
+      body, and a control living inside the thing being replaced is a control
+      that disappears the first time it is needed. -#}
   <aside class="jarvis-rail" id="jarvis-rail" aria-label="What Jarvis has">
-    {% include "_jarvis_rail.html" %}
+    <button class="pane-toggle" type="button" data-pane="rail"
+            aria-controls="rail-body" aria-expanded="true">
+      <span class="pane-chevron" aria-hidden="true"></span>
+      <span class="pane-label">Resources</span>
+    </button>
+    <div class="pane-body" id="rail-body">{% include "_jarvis_rail.html" %}</div>
   </aside>
 
   {#- A div, not a <main>: base.html already provides the page's one main
@@ -88,7 +110,12 @@
   </div>
 
   <aside class="jarvis-bench" id="jarvis-bench" aria-label="Workbench">
-    {% include "_jarvis_bench.html" %}
+    <button class="pane-toggle" type="button" data-pane="bench"
+            aria-controls="bench-body" aria-expanded="true">
+      <span class="pane-chevron" aria-hidden="true"></span>
+      <span class="pane-label">Workbench</span>
+    </button>
+    <div class="pane-body" id="bench-body">{% include "_jarvis_bench.html" %}</div>
   </aside>
 </div>
 

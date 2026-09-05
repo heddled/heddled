@@ -105,7 +105,6 @@ function renderMd(src) {
 const BASE = window.CHAT_BASE || `/chat/${encodeURIComponent(window.CHAT_AGENT)}`;
 const THREAD_PARAM = window.CHAT_THREAD_PARAM || 'session';
 const CAN_REPORT = window.CHAT_REPORT !== false;
-const PANEL = window.CHAT_PANEL || null;
 
 const AGENT = window.CHAT_AGENT;
 let sessionId = window.CHAT_SESSION || null;
@@ -367,24 +366,16 @@ form.addEventListener('submit', async (e) => {
   }
 });
 
-// What it has built, refreshed when a turn ends rather than reloaded with the
-// page — a panel that only updates on F5 is a panel you stop believing.
-async function refreshPanel() {
-  if (!PANEL) return;
-  const target = document.getElementById('jarvis-panel');
-  if (!target) return;
-  const scroll = target.scrollTop;
-  try {
-    const r = await fetch(PANEL + (threadId ? `?chat=${encodeURIComponent(threadId)}` : ''));
-    if (!r.ok) return;
-    target.innerHTML = await r.text();
-    // Rebuilt markup has none of the state the reader put there — which
-    // section they folded, what they typed in the filter, where they had
-    // scrolled to. The page puts it back; without this, a turn ending yanks
-    // the panel out from under whoever was reading it.
-    target.scrollTop = scroll;
-    document.dispatchEvent(new CustomEvent('panel-refreshed'));
-  } catch (err) { /* the panel is a convenience; the conversation is the page */ }
+// A finished turn is the moment anything beside the conversation goes stale:
+// it may have written a file, run a command, or built an agent. This file does
+// not know what those side panels are — /chat has none — so it says so and
+// leaves the refreshing to whoever owns them.
+//
+// It used to fetch and swap a panel by id itself. The id changed when the
+// Jarvis screen grew a third pane, and the rail quietly stopped updating: you
+// watched it build an agent and the list only caught up on reload.
+function refreshPanel() {
+  document.dispatchEvent(new CustomEvent('turn-finished'));
 }
 
 // Enter sends, Shift+Enter makes a new line, and the box grows to fit rather

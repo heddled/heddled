@@ -97,21 +97,70 @@
   }
 
   async function refreshBench() {
-    if (!bench || !window.CHAT_BENCH) return;
+    const body = document.getElementById('bench-body');
+    if (!body || !window.CHAT_BENCH) return;
     const params = new URLSearchParams({ tab: window.CHAT_BENCH_TAB || 'files' });
     if (window.CHAT_THREAD) params.set('chat', window.CHAT_THREAD);
     try {
       const r = await fetch(`${window.CHAT_BENCH}?${params}`);
       if (!r.ok) return;
-      bench.innerHTML = await r.text();
+      body.innerHTML = await r.text();
       stickTerminal();
     } catch (err) { /* the bench is a view; the conversation is the page */ }
   }
 
-  // A turn ending is the moment the panes are stale: it may have written a
-  // file, run a command, or built an agent.
-  document.addEventListener('panel-refreshed', restoreRail);
-  document.addEventListener('panel-refreshed', refreshBench);
+  // ---------------------------------------------------------- folding away
+
+  const grid = document.querySelector('.jarvis-grid');
+
+  function setPane(which, open) {
+    const pane = which === 'rail' ? rail : bench;
+    if (!pane || !grid) return;
+    pane.classList.toggle('shut', !open);
+    grid.classList.toggle(`${which}-shut`, !open);
+    const button = pane.querySelector('.pane-toggle');
+    if (button) button.setAttribute('aria-expanded', open ? 'true' : 'false');
+    try { localStorage.setItem(`jarvis-pane:${which}`, open ? '1' : '0'); }
+    catch (err) { /* nothing worth failing over */ }
+  }
+
+  document.querySelectorAll('.pane-toggle').forEach(button => {
+    button.addEventListener('click', () => {
+      const which = button.dataset.pane;
+      const pane = which === 'rail' ? rail : bench;
+      setPane(which, pane.classList.contains('shut'));
+    });
+  });
+
+  ['rail', 'bench'].forEach(which => {
+    let saved = null;
+    try { saved = localStorage.getItem(`jarvis-pane:${which}`); } catch (err) { /* */ }
+    if (saved === '0') setPane(which, false);
+  });
+
+  // ------------------------------------------------------------- refreshing
+  //
+  // A turn ending is the moment both panes go stale: it may have written a
+  // file, run a command, or built an agent. chat.js says when; what to refresh
+  // is this screen's business, not the chat client's.
+  async function refreshRail() {
+    const body = document.getElementById('rail-body');
+    if (!body) return;
+    const params = new URLSearchParams();
+    if (window.CHAT_THREAD) params.set('chat', window.CHAT_THREAD);
+    const scroll = body.scrollTop;
+    try {
+      const r = await fetch(`/jarvis/rail?${params}`);
+      if (!r.ok) return;
+      body.innerHTML = await r.text();
+      // Rebuilt markup carries none of the state the reader put there.
+      body.scrollTop = scroll;
+      restoreRail();
+    } catch (err) { /* the rail is a view; the conversation is the page */ }
+  }
+
+  document.addEventListener('turn-finished', refreshRail);
+  document.addEventListener('turn-finished', refreshBench);
 
   restoreRail();
   stickTerminal();

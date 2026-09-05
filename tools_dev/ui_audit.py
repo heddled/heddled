@@ -97,6 +97,14 @@ JS = r"""
     // A checkbox inside its own label is not the target: the label is, and it
     // is already comfortably sized. Flagging the box produces noise, not bugs.
     if (el.type === 'checkbox' && el.closest('label')) return;
+    // Same reasoning for the visually-hidden input behind a styled label —
+    // the standard way to make `<input type=file>` look like anything. The
+    // control a finger lands on is the label, which is measured on its own.
+    const clipped = st.clipPath === 'inset(50%)' || st.position === 'absolute'
+                    && (r.width <= 1 || r.height <= 1);
+    if (clipped && el.id && document.querySelector(`label[for="${CSS.escape(el.id)}"]`)) {
+      return;
+    }
     if (r.height < 24 || r.width < 16) {
       small.push(`${el.tagName.toLowerCase()}.${el.className||''}`.slice(0,60)
                  + ` ${Math.round(r.width)}x${Math.round(r.height)}`);

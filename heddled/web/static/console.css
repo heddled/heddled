@@ -1471,8 +1471,90 @@ td.cap-cell { width: 130px; min-width: 130px; }
   gap: var(--s4); align-items: start;
 }
 @media (max-width: 1500px) { .jarvis-grid { grid-template-columns: 260px minmax(0,1fr) 320px; } }
+/* Either rail folds to a strip, so the conversation can have the window when
+   that is what you are doing. The strip keeps the control that reopens it —
+   a pane you can close and not reopen is a pane you have lost. */
+.jarvis-grid.rail-shut  { grid-template-columns: 38px minmax(0, 1fr) 360px; }
+.jarvis-grid.bench-shut { grid-template-columns: 290px minmax(0, 1fr) 38px; }
+.jarvis-grid.rail-shut.bench-shut { grid-template-columns: 38px minmax(0, 1fr) 38px; }
+@media (max-width: 1500px) {
+  .jarvis-grid.rail-shut  { grid-template-columns: 38px minmax(0,1fr) 320px; }
+  .jarvis-grid.bench-shut { grid-template-columns: 260px minmax(0,1fr) 38px; }
+  .jarvis-grid.rail-shut.bench-shut { grid-template-columns: 38px minmax(0,1fr) 38px; }
+}
 .jarvis-head { margin-bottom: var(--s3); }
-.budget-chip { font-variant-numeric: tabular-nums; }
+
+.pane-toggle {
+  display: flex; align-items: center; gap: var(--s2); width: 100%;
+  background: none; border: 0; border-bottom: 1px solid var(--line);
+  padding: var(--s2) var(--s3); cursor: pointer; color: var(--muted);
+  font-family: var(--sans); font-size: 12px; font-weight: 600;
+  letter-spacing: .06em; text-transform: uppercase; min-height: var(--tap);
+}
+.pane-toggle:hover { color: var(--text); }
+.pane-toggle:focus-visible { outline: 2px solid var(--accent); outline-offset: -2px; }
+.pane-chevron {
+  width: 0; height: 0; flex: none;
+  border: 5px solid transparent; border-left-color: currentColor;
+  transition: transform .14s ease;
+}
+.jarvis-rail .pane-chevron { transform: rotate(180deg); }
+.jarvis-rail.shut .pane-chevron { transform: none; }
+.jarvis-bench .pane-chevron { transform: none; }
+.jarvis-bench.shut .pane-chevron { transform: rotate(180deg); }
+.pane-body { flex: 1 1 auto; overflow-y: auto; min-height: 0; }
+.jarvis-rail .pane-body { padding: 0 var(--s4) var(--s4); }
+
+/* Folded: the strip keeps only the button, turned on its side. */
+.jarvis-rail.shut, .jarvis-bench.shut { overflow: hidden; }
+.shut .pane-body { display: none; }
+.shut .pane-toggle {
+  height: 100%; border-bottom: 0; flex-direction: column; justify-content: flex-start;
+  padding: var(--s3) 0; gap: var(--s3);
+}
+.shut .pane-label { writing-mode: vertical-rl; letter-spacing: .1em; }
+
+.budget-chip {
+  display: inline-flex; flex-direction: column; gap: 3px; min-width: 8.5rem;
+  font-variant-numeric: tabular-nums; font-size: 12.5px;
+}
+.budget-figure { white-space: nowrap; }
+.budget-chip .cap-bar { width: 100%; }
+.inline-menu .menu .topup label {
+  display: block; font-size: 12px; color: var(--muted); margin-bottom: var(--s1);
+}
+.inline-menu .menu form + form { margin-top: var(--s3); padding-top: var(--s3);
+                                 border-top: 1px solid var(--line); }
+.inline-menu .menu .topup input { width: 6rem; }
+
+/* The file list, as a grid so sizes and buttons line up down the column
+   instead of landing wherever each filename happens to end. */
+.file-list { list-style: none; margin: 0; padding: 0; }
+.file-list li {
+  display: grid; grid-template-columns: minmax(0, 1fr) auto auto;
+  align-items: center; gap: var(--s2);
+  padding: 2px 0; border-bottom: 1px solid var(--line);
+}
+.file-list li:last-child { border-bottom: 0; }
+.file-name {
+  font-family: var(--mono); font-size: 12.5px; min-height: var(--tap-sm);
+  display: flex; align-items: center; overflow: hidden; text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.file-size {
+  font-size: 12px; color: var(--muted); font-variant-numeric: tabular-nums;
+  white-space: nowrap;
+}
+/* Pinned to the foot of the pane rather than trailing the last row, where it
+   read as an unfinished list item. */
+.bench-foot {
+  margin-top: auto; padding-top: var(--s3); border-top: 1px solid var(--line);
+  display: flex; gap: var(--s2); align-items: center;
+}
+.file-pick {
+  flex: 1 1 auto; justify-content: flex-start; overflow: hidden;
+  text-overflow: ellipsis; white-space: nowrap; cursor: pointer;
+}
 .jarvis-chat {
   display: flex; flex-direction: column; min-width: 0;
   /* Tall enough to read a conversation in, short enough that the box stays on
@@ -1496,8 +1578,15 @@ td.cap-cell { width: 130px; min-width: 130px; }
   padding: 0; display: flex; flex-direction: column;
   height: calc(100vh - 190px); min-height: 420px;
 }
-.jarvis-bench .bench-body { flex: 1 1 auto; overflow-y: auto; }
-.jarvis-rail { height: calc(100vh - 190px); min-height: 420px; }
+/* The pane body is the scroller; the tab's content fills it, so a foot row
+   with `margin-top: auto` reaches the bottom of the pane instead of trailing
+   the last file. */
+.jarvis-bench .pane-body { display: flex; flex-direction: column; }
+.jarvis-bench .bench-body { flex: 1 1 auto; min-height: 0; }
+.jarvis-rail {
+  height: calc(100vh - 190px); min-height: 420px;
+  padding: 0; display: flex; flex-direction: column;
+}
 .topup input { flex: 0 1 5.5rem; width: 5.5rem; }
 
 /* ------------------------------------------------------------- the bench */
@@ -1522,13 +1611,6 @@ td.cap-cell { width: 130px; min-width: 130px; }
   font-size: 12px; line-height: 1.5; color: var(--muted); margin: 0 0 var(--s1);
 }
 .bench-note .dot { margin-right: 6px; }
-/* The filename is the control that opens the file, so it is sized like one —
-   19px tall was under the 24px minimum and awkward to hit. */
-.bench-files .panel-name {
-  font-family: var(--mono); font-size: 12.5px;
-  display: inline-flex; align-items: center; min-height: var(--tap-sm);
-  padding: 0 2px; word-break: break-all;
-}
 
 /* ---------------------------------------------------------- the terminal */
 .term {
@@ -1616,7 +1698,7 @@ details.panel-group > summary:focus-visible {
    is one you stop using. */
 .panel-find {
   position: sticky; top: 0; z-index: 2; background: var(--panel);
-  padding: var(--s2) 0 var(--s1); margin: 0;
+  padding: var(--s3) 0 var(--s1); margin: 0;
 }
 .panel-find input { width: 100%; }
 .panel-none { color: var(--muted); font-size: 12px; margin: 0 0 var(--s3); }
@@ -1654,12 +1736,12 @@ details.panel-group > summary:focus-visible {
 .panel-list > li > details > summary:focus-visible {
   outline: 2px solid var(--accent); outline-offset: 1px; border-radius: var(--radius);
 }
-/* The name is the identifier and truncates last. Left to shrink evenly, a note
-   called `smtp_not_set_up` rendered as `smtp_n…` while its description got the
-   room — exactly backwards, since the description is the part you can guess. */
+/* The name is the identifier and truncates last — and in a 260px rail with a
+   badge beside it, "last" means never: the row wraps instead, so
+   `moneybird_overdue` keeps its last five letters and the badge drops below. */
+.panel-list > li > details > summary { flex-wrap: wrap; }
 .panel-list > li > details > summary .panel-name {
-  flex: 0 1 auto; max-width: 62%;
-  overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
+  flex: 1 1 auto; min-width: 0; overflow-wrap: anywhere;
 }
 .panel-list > li > details > summary .panel-note {
   flex: 1 1 0; min-width: 0; margin: 0; -webkit-line-clamp: 1;

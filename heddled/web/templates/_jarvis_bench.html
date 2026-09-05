@@ -16,25 +16,25 @@
 
 {% if tab == 'files' %}
 <div class="bench-body">
-  <p class="bench-note">Everything in <code>{{ work }}</code>. Jarvis writes here
-    with its file tools, the terminal runs here, and anything a script leaves
-    behind shows up in this list.</p>
+  {#- `jarvis/work`, not the absolute path: four wrapped lines of
+      /tmp/…/scratchpad/bench/jarvis/work told nobody anything they needed. -#}
+  <p class="bench-note">Everything in <code>jarvis/work</code> — what the file
+    tools write, what the terminal runs in, and where a script leaves its
+    output.</p>
   {% if files %}
-  <ul class="panel-list bench-files">
+  {#- A grid, so the sizes and the buttons line up down the column instead of
+      landing wherever the filename happens to end. -#}
+  <ul class="file-list">
     {% for f in files %}
-    <li class="panel-item">
-      <div class="panel-row">
-        <a class="panel-name" href="/jarvis/files/view?path={{ f.path | urlencode }}&chat={{ chat_id }}">{{ f.path }}</a>
-        <span class="panel-do">
-          <span class="muted small">{{ f.bytes | filesize }}</span>
-          <form method="post" action="/jarvis/files" class="inline"
-                data-confirm="Delete {{ f.path }}? Jarvis cannot undo this and neither can you.">
-            <input type="hidden" name="delete" value="{{ f.path }}">
-            <input type="hidden" name="chat" value="{{ chat_id }}">
-            <button class="btn tiny danger" type="submit">Delete</button>
-          </form>
-        </span>
-      </div>
+    <li>
+      <a class="file-name" href="/jarvis/files/view?path={{ f.path | urlencode }}&chat={{ chat_id }}">{{ f.path }}</a>
+      <span class="file-size">{{ f.bytes | filesize }}</span>
+      <form method="post" action="/jarvis/files" class="inline"
+            data-confirm="Delete {{ f.path }}? Jarvis cannot undo this and neither can you.">
+        <input type="hidden" name="delete" value="{{ f.path }}">
+        <input type="hidden" name="chat" value="{{ chat_id }}">
+        <button class="btn tiny danger" type="submit">Delete</button>
+      </form>
     </li>
     {% endfor %}
   </ul>
@@ -42,10 +42,15 @@
   <p class="panel-empty">Empty. Ask Jarvis to write something, or add a file
     for it to work on.</p>
   {% endif %}
+
+  {#- Pinned to the bottom of the pane rather than floating under the last row,
+      where it read as an unfinished list item. -#}
   <form method="post" action="/jarvis/files" enctype="multipart/form-data"
-        class="row upload-row">
-    <label class="sr-only" for="bench-upload">Add a file to the workspace</label>
-    <input id="bench-upload" type="file" name="file">
+        class="bench-foot">
+    <label class="btn tiny file-pick" for="bench-upload">Choose a file…</label>
+    <input id="bench-upload" type="file" name="file" class="sr-only"
+           onchange="this.form.querySelector('.file-pick').textContent =
+                     this.files[0] ? this.files[0].name : 'Choose a file…'">
     <input type="hidden" name="chat" value="{{ chat_id }}">
     <button class="btn tiny" type="submit">Add</button>
   </form>
@@ -54,10 +59,10 @@
 {% elif tab == 'terminal' %}
 <div class="bench-body">
   {% if shell.running %}
-  <p class="bench-note"><span class="dot ok"></span>A container of its own — no
-    Heddled in it, no database, no keys, and none of your systems reachable from
-    it. It shares only <code>work/</code>.
-    {% if shell.free_mb %}<span class="muted">{{ shell.free_mb }} MB free.</span>{% endif %}</p>
+  <p class="bench-note"><span class="dot ok"></span>A container of its own:
+    no Heddled, no keys, nothing of yours reachable. Shares only
+    <code>jarvis/work</code>.{% if shell.free_mb %}
+    <span class="muted">{{ shell.free_mb }} MB free.</span>{% endif %}</p>
   {% else %}
   <p class="banner warn">The terminal is not running. {{ shell.why }}</p>
   {% endif %}
@@ -78,7 +83,7 @@
     {% endfor %}
   </div>
 
-  <form method="post" action="/jarvis/terminal" class="term-form" autocomplete="off">
+  <form method="post" action="/jarvis/terminal" class="term-form bench-foot" autocomplete="off">
     <span class="term-prompt" aria-hidden="true">$</span>
     <label class="sr-only" for="term-input">A command to run in the workspace</label>
     <input id="term-input" name="command" class="mono" spellcheck="false"
@@ -90,9 +95,8 @@
 
 {% else %}
 <div class="bench-body">
-  <p class="bench-note">A reader, not a browser: it fetches a page and pulls the
-    text out. No JavaScript runs, so a site that builds itself in the browser
-    comes back thin. It cannot reach your own network.</p>
+  <p class="bench-note">A reader, not a browser: it pulls the text out of a
+    page. No JavaScript, and it cannot reach your own network.</p>
 
   <form method="post" action="/jarvis/browse" class="term-form" autocomplete="off">
     <label class="sr-only" for="browse-url">A page to read</label>

@@ -859,7 +859,10 @@ class TestTheWorkbench:
         workspace.write(jarvis.work_dir(), "notes.txt", "written by a tool")
         page = client.get(f"/jarvis/bench?tab=files&chat={chat}").get_data(as_text=True)
         assert "notes.txt" in page
-        assert str(jarvis.work_dir()) in page
+        # Named, not spelled out: the pane says `jarvis/work`, because four
+        # wrapped lines of an absolute path told nobody anything they needed.
+        assert "jarvis/work" in page
+        assert str(jarvis.work_dir()) not in page
 
     def test_the_terminal_pane_says_when_it_is_not_running(self, client, on, chat, monkeypatch):
         monkeypatch.delenv("HEDDLED_JARVIS_SANDBOX", raising=False)
