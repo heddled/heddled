@@ -1,0 +1,16 @@
+{% extends "base.html" %}
+{% block title %}{{ path }} · Jarvis · Heddled{% endblock %}
+{% block body %}
+<header class="page-head">
+  <h1><a href="/jarvis?chat={{ chat_id }}&tab=files" class="crumb">Jarvis</a>
+    / <span class="mono">{{ path }}</span></h1>
+  <div class="page-actions">
+    <a class="btn tiny" href="/jarvis?chat={{ chat_id }}&tab=files">Back to the files</a>
+  </div>
+</header>
+{#- What the workspace reader makes of it — the same extraction the agent's own
+    read_file gives, so what you see is what Jarvis sees. -#}
+<section class="card">
+  <pre class="payload">{{ body }}</pre>
+</section>
+{% endblock %}

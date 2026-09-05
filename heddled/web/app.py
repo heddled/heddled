@@ -2154,16 +2154,20 @@ def register_api(app: Flask) -> None:
         if chat_id:
             chat = _jarvis_chat_or_404(chat_id)
             history, last_seq = _chat_history(chat["session_id"])
-        threads = [{"id": c["id"], "title": c["goal"], "updated_at": c["created_at"],
-                    "status": c["status"]} for c in jarvis.chats()]
         return render_template(
-            "jarvis.html", chat=chat, chat_id=chat_id, threads=threads,
+            # `chat_id` comes from _bench below, which already carries it.
+            "jarvis.html", chat=chat, threads=_threads(),
             history=history, last_seq=last_seq, panel=_panel(),
             session_id=(chat["session_id"] if chat else ""),
             budget=(jarvis.budget_state(chat_id) if chat_id else None),
             default_budget=jarvis.default_budget(), model=jarvis.model(),
             who=who, problem=request.args.get("problem"),
-            done=request.args.get("done"))
+            done=request.args.get("done"),
+            # Spread, not nested: the bench is an `{% include %}`, which reads
+            # these names at the top level of the context. Nested under `bench`
+            # they were all undefined, and every tab fell through to the last
+            # branch — the page rendered the browser whatever you clicked.
+            **_bench(request.args.get("tab"), chat_id))
 
     @app.route("/jarvis/agent/<name>")
     def jarvis_look_agent(name):
@@ -2191,15 +2195,116 @@ def register_api(app: Flask) -> None:
                                chat_id=request.args.get("chat", ""),
                                promoted=name in get_registry().tools())
 
-    @app.route("/jarvis/panel")
-    def jarvis_panel():
-        """The panel on its own, so the page can refresh it when a turn ends
-        without reloading the conversation out from under you."""
+    @app.route("/jarvis/rail")
+    def jarvis_rail():
+        """The left rail on its own, so a finished turn can refresh what Jarvis
+        has without reloading the conversation out from under you."""
         _jarvis_on()
         chat_id = request.args.get("chat")
-        return render_template(
-            "_jarvis_panel.html", panel=_panel(), chat_id=chat_id,
-            budget=(jarvis.budget_state(chat_id) if chat_id else None))
+        return render_template("_jarvis_rail.html", panel=_panel(),
+                               chat_id=chat_id, threads=_threads())
+
+    @app.route("/jarvis/bench")
+    def jarvis_bench():
+        """The right pane: files, terminal, browser. One fragment with a tab, so
+        the pane refreshes itself after a turn without the page moving."""
+        _jarvis_on()
+        return render_template("_jarvis_bench.html",
+                               **_bench(request.args.get("tab"),
+                                        request.args.get("chat")))
+
+    def _threads():
+        return [{"id": c["id"], "title": c["goal"], "at": c["created_at"],
+                 "status": c["status"]} for c in jarvis.chats()]
+
+    def _bench(tab: str = None, chat_id: str = None) -> dict:
+        """What the workbench shows. All three read the same `jarvis/work` — a
+        script written by a file tool is the script the terminal runs and the
+        file the browser pane cannot see, which is the point of them sharing a
+        directory."""
+        from .. import jarvis_shell
+
+        tab = tab if tab in ("files", "terminal", "browser") else "files"
+        root = jarvis.work_dir()
+        root.mkdir(parents=True, exist_ok=True)
+        page = jarvis.last_page()
+        return {
+            "tab": tab,
+            "chat_id": chat_id or "",
+            "files": workspace.listing(root),
+            "work": str(root),
+            "shell": jarvis_shell.health(),
+            "console": jarvis.console(limit=30, kind="command"),
+            "page": page,
+            "page_text": (page["output"] if page else ""),
+        }
+
+    @app.route("/jarvis/terminal", methods=["POST"])
+    def jarvis_terminal():
+        """A command typed by the person watching. Same shell, same directory,
+        same transcript as the ones Jarvis runs — it is one workbench, and two
+        separate histories would be two accounts of one thing."""
+        _jarvis_on()
+        from .. import jarvis_shell
+
+        who = (getattr(g, "user", None) or {}).get("username") or "console"
+        command = (request.form.get("command") or "").strip()
+        chat_id = request.form.get("chat") or ""
+        if not command:
+            return _back_to(chat_id, tab="terminal")
+        try:
+            result = jarvis_shell.run_command(command)
+            printed = (result.get("stdout") or "")
+            if result.get("stderr"):
+                printed += ("\n" if printed else "") + result["stderr"]
+            jarvis.record_console("command", command, printed,
+                                  bool(result.get("ok")), who, chat_id)
+        except (ValueError, jarvis_shell.ShellUnavailable) as exc:
+            jarvis.record_console("command", command, str(exc), False, who, chat_id)
+        return _back_to(chat_id, tab="terminal")
+
+    @app.route("/jarvis/browse", methods=["POST"])
+    def jarvis_browse():
+        _jarvis_on()
+        from .. import jarvis_shell
+
+        who = (getattr(g, "user", None) or {}).get("username") or "console"
+        url = (request.form.get("url") or "").strip()
+        chat_id = request.form.get("chat") or ""
+        if url:
+            try:
+                page = jarvis_shell.read_page(url)
+                jarvis.record_console("page", page["url"], page["text"][:20_000],
+                                      True, who, chat_id)
+            except ValueError as exc:
+                jarvis.record_console("page", url, str(exc), False, who, chat_id)
+        return _back_to(chat_id, tab="browser")
+
+    @app.route("/jarvis/files/view")
+    def jarvis_file_view():
+        _jarvis_on()
+        path = request.args.get("path") or ""
+        try:
+            body = workspace.read(jarvis.work_dir(), path)
+        except workspace.WorkspaceError as exc:
+            return _back_to(request.args.get("chat") or "", problem=str(exc))
+        return render_template("jarvis_file.html", path=path, body=body,
+                               chat_id=request.args.get("chat") or "")
+
+    @app.route("/jarvis/files", methods=["POST"])
+    def jarvis_file_add():
+        _jarvis_on()
+        chat_id = request.form.get("chat") or ""
+        upload = request.files.get("file")
+        try:
+            if request.form.get("delete"):
+                workspace.delete(jarvis.work_dir(), request.form["delete"])
+            elif upload and upload.filename:
+                workspace.store_upload(jarvis.work_dir(), upload.filename,
+                                       upload.read())
+        except workspace.WorkspaceError as exc:
+            return _back_to(chat_id, problem=str(exc))
+        return _back_to(chat_id, tab="files")
 
     @app.route("/jarvis/messages", methods=["POST"])
     def jarvis_send():
@@ -2299,9 +2404,10 @@ def register_api(app: Flask) -> None:
         )
 
     def _back_to(chat_id: str, **words):
-        """Back to the conversation you were in. Deliberately built from the
-        chat id rather than from a `back` field in the form — a redirect target
-        a form can name is a redirect target an attacker can name."""
+        """Back to the conversation you were in, and the pane you were in.
+        Deliberately built from the chat id rather than from a `back` field in
+        the form — a redirect target a form can name is a redirect target an
+        attacker can name."""
         return redirect(url_for("jarvis_screen", chat=chat_id or None, **words))
 
     @app.route("/jarvis/promote", methods=["POST"])

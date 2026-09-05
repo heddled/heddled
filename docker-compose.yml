@@ -30,6 +30,9 @@ services:
       HEDDLED_KEEP_FULL_CONTEXT_DAYS: "${HEDDLED_KEEP_FULL_CONTEXT_DAYS:-90}"
       # In split mode the web container must not also tick triggers.
       HEDDLED_WEB_ONLY: "${HEDDLED_WEB_ONLY:-0}"
+      # Where Jarvis's terminal lives. Empty, or unreachable, and the terminal
+      # reports itself as not running rather than failing mid-command.
+      HEDDLED_JARVIS_SANDBOX: "${HEDDLED_JARVIS_SANDBOX:-http://jarvis-sandbox:8080}"
     volumes:
       - ./agents:/app/agents
       - ./tools:/app/tools
@@ -38,6 +41,9 @@ services:
       # without `docker cp` — the same reasoning as agents/ and tools/. Both
       # services get it: the worker runs the turns that touch it.
       - ./work:/app/work
+      # Jarvis's own tree. Its agents, tools and notes live here, and `work/`
+      # inside it is the one directory the sandbox container also sees.
+      - ./jarvis:/app/jarvis
       - heddled-data:/app/data
       - heddled-var:/app/var
     restart: unless-stopped
@@ -67,8 +73,34 @@ services:
       # without `docker cp` — the same reasoning as agents/ and tools/. Both
       # services get it: the worker runs the turns that touch it.
       - ./work:/app/work
+      - ./jarvis:/app/jarvis
       - heddled-data:/app/data
       - heddled-var:/app/var
+    restart: unless-stopped
+
+  # Jarvis's terminal, and the reason its fences survive having one.
+  #
+  # A shell in the Heddled container would be able to read data/heddled.db —
+  # every provider key and password hash on the instance — and edit
+  # agents/*.yaml, which is where the approval gates live. So it runs here
+  # instead: no Heddled source, no database, no environment, and one volume it
+  # shares with the file browser. No published port either; it is reachable
+  # only from this network, by name, which is how Heddled finds it.
+  #
+  # Started only with `--profile jarvis`, because Jarvis is an add-on nobody
+  # gets by default:
+  #
+  #     docker compose --profile jarvis up -d --build
+  #
+  # Without it the Jarvis screen still works and the terminal simply says it
+  # is not running.
+  jarvis-sandbox:
+    build: ./sandbox
+    image: heddled-jarvis-sandbox:latest
+    init: true
+    profiles: ["jarvis"]
+    volumes:
+      - ./jarvis/work:/work
     restart: unless-stopped
 
 volumes:

@@ -1,16 +1,11 @@
-{#- What Jarvis has, refreshed on its own when a turn ends. A fragment rather
-    than a block of JavaScript building DOM: the server already knows how to
-    render this, and one renderer is one place for it to be wrong.
+{#- The left rail: what Jarvis has, and every conversation you have had with it.
 
-    Every list here grows without limit — a month of conversations is a lot of
-    tools — so the shape is: one filter over the whole panel, and sections that
-    fold. The filter is deliberately not per-section, because "where is that
-    postcode thing" should not require knowing first whether Jarvis called it an
-    agent or a tool. -#}
+    One filter over the whole rail rather than one per section, because "where
+    is that postcode thing" should not require knowing first whether Jarvis
+    filed it as an agent or a tool. Sections fold and stay folded; every item is
+    one line until you open it, because these lists grow without limit. -#}
 
-{% macro section(id, title, count) %}
-  {#- `data-panel` is what the page script keys open/closed state on, and
-      `data-count` is what the filter rewrites as "3 of 12". -#}
+{% macro group(id, title, count) %}
   <details class="panel-group" data-panel="{{ id }}" open>
     <summary>
       <span class="panel-title">{{ title }}</span>
@@ -20,67 +15,33 @@
   </details>
 {% endmacro %}
 
-{% if budget %}
-<section class="panel-group panel-fixed">
-  <h2>This conversation</h2>
-  <p class="panel-figure">€{{ '%.2f' | format(budget.spent) }}
-    <span class="muted">of €{{ '%.2f' | format(budget.budget) }}</span></p>
-  <span class="cap-bar" role="img"
-        aria-label="{{ budget.pct }}% of this conversation's budget used">
-    <span class="cap-fill {{ 'hot' if budget.pct >= 80 }}"
-          style="width: {{ budget.pct }}%"></span>
-  </span>
-  {% if budget.spent_up %}
-  <p class="hint">Used up. It will not take another message until you add more.</p>
-  {% endif %}
-  <form method="post" action="/jarvis/{{ chat_id }}/budget" class="topup">
-    <label class="sr-only" for="topup">Add to this conversation's budget, in euros</label>
-    <input id="topup" name="extra" type="number" step="0.50" min="0.50" value="2.00">
-    <button class="btn tiny" type="submit">Add</button>
-  </form>
-</section>
-{% endif %}
-
-{% if panel.agents or panel.tools or panel.memories or panel.schedules %}
 <div class="panel-find">
   <label class="sr-only" for="panel-filter">Filter what Jarvis has</label>
-  <input id="panel-filter" type="search" placeholder="Filter by name…"
+  <input id="panel-filter" type="search" placeholder="Filter…"
          autocomplete="off" spellcheck="false">
 </div>
 <p class="panel-none" id="panel-none" hidden>Nothing matches that.</p>
-{% endif %}
 
-{% call section('memories', 'Notes it keeps', panel.memories | length) %}
-  {% if panel.memories %}
+{% call group('threads', 'Conversations', threads | length) %}
+  <a class="btn tiny rail-new" href="/jarvis">New conversation</a>
+  {% if threads %}
   <ul class="panel-list">
-    {% for m in panel.memories %}
-    <li class="panel-item" data-find="{{ m.name }} {{ m.description }}">
-      <details>
-        <summary>
-          <span class="panel-name">{{ m.name }}</span>
-          <span class="panel-note">{{ m.description }}</span>
-        </summary>
-        <pre class="payload">{{ m.body }}</pre>
-        <form method="post" action="/jarvis/remove" class="inline"
-              data-confirm="Delete the note {{ m.name }}? It will stop carrying this into new conversations.">
-          <input type="hidden" name="kind" value="memory">
-          <input type="hidden" name="name" value="{{ m.name }}">
-          <input type="hidden" name="chat" value="{{ chat_id or '' }}">
-          <button class="btn tiny danger" type="submit">Forget this</button>
-        </form>
-      </details>
+    {% for t in threads %}
+    <li class="panel-item" data-find="{{ t.title }}">
+      <a class="rail-thread {{ 'here' if t.id == chat_id }}"
+         href="/jarvis?chat={{ t.id }}"
+         {{ 'aria-current=page' if t.id == chat_id }}>
+        <span class="rail-thread-title">{{ t.title }}</span>
+        <span class="rail-thread-when">{{ t.at | ago }}{% if t.status == 'discarded' %}
+          · discarded{% endif %}</span>
+      </a>
     </li>
     {% endfor %}
   </ul>
-  <p class="hint">One line of each goes into every conversation; it opens the
-    ones that look relevant. Markdown in <code>jarvis/memory/</code>.</p>
-  {% else %}
-  <p class="panel-empty">Nothing yet. It writes one when it learns something
-    worth having next time.</p>
   {% endif %}
 {% endcall %}
 
-{% call section('agents', 'Agents it made', panel.agents | length) %}
+{% call group('agents', 'Agents', panel.agents | length) %}
   {% if panel.agents %}
   <ul class="panel-list">
     {% for a in panel.agents %}
@@ -120,7 +81,7 @@
   {% endif %}
 {% endcall %}
 
-{% call section('tools', 'Tools it made', panel.tools | length) %}
+{% call group('tools', 'Tools', panel.tools | length) %}
   {% if panel.tools %}
   <ul class="panel-list">
     {% for t in panel.tools %}
@@ -157,24 +118,51 @@
     {% endfor %}
   </ul>
   <p class="hint">None of these hold your keys — an action Jarvis builds is
-    handed your settings with every credential removed. One marked
-    <b>python</b> is code the model wrote; it runs in a child process with no
-    keys and no way back into Heddled, and keeps doing so after you take it.</p>
+    handed your settings with every credential removed.</p>
   {% else %}
   <p class="panel-empty">None yet.</p>
   {% endif %}
 {% endcall %}
 
-{% call section('schedules', 'Runs on its own',
-                (panel.own_schedules | length) + (panel.schedules | length)) %}
+{% call group('knowledge', 'Knowledge', panel.memories | length) %}
+  {% if panel.memories %}
+  <ul class="panel-list">
+    {% for m in panel.memories %}
+    <li class="panel-item" data-find="{{ m.name }} {{ m.description }}">
+      <details>
+        <summary>
+          <span class="panel-name">{{ m.name }}</span>
+          <span class="panel-note">{{ m.description }}</span>
+        </summary>
+        <pre class="payload">{{ m.body }}</pre>
+        <form method="post" action="/jarvis/remove" class="inline"
+              data-confirm="Delete the note {{ m.name }}? It will stop carrying this into new conversations.">
+          <input type="hidden" name="kind" value="memory">
+          <input type="hidden" name="name" value="{{ m.name }}">
+          <input type="hidden" name="chat" value="{{ chat_id or '' }}">
+          <button class="btn tiny danger" type="submit">Forget this</button>
+        </form>
+      </details>
+    </li>
+    {% endfor %}
+  </ul>
+  <p class="hint">One line of each goes into every conversation; it opens the
+    ones that look relevant. Markdown in <code>jarvis/memory/</code>.</p>
+  {% else %}
+  <p class="panel-empty">Nothing yet. It writes a note when it learns something
+    worth having next time.</p>
+  {% endif %}
+{% endcall %}
+
+{% call group('jobs', 'Jobs',
+              (panel.own_schedules | length) + (panel.schedules | length)) %}
   {% if panel.own_schedules or panel.schedules %}
   {% if panel.schedule_budget %}
   <p class="hint">Nobody is watching these. Everything Jarvis runs on a schedule
     shares €{{ '%.2f' | format(panel.schedule_budget.cap) }} a day —
     €{{ '%.2f' | format(panel.schedule_budget.spent) }} used.
     {% if not panel.schedule_budget.affordable %}
-    <b>Used up: nothing of Jarvis's fires again until tomorrow.</b>
-    {% endif %}</p>
+    <b>Used up: nothing of Jarvis's fires again until tomorrow.</b>{% endif %}</p>
   {% endif %}
   <ul class="panel-list">
     {% for s in panel.own_schedules %}

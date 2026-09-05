@@ -1,0 +1,117 @@
+{#- The workbench. Three views of one directory: `jarvis/work` is what the file
+    tools write, what the terminal's shell is `cd`'d into, and what a script run
+    there leaves its output in. That shared directory is what makes the three
+    panes one thing rather than three widgets.
+
+    Rendered server-side and swapped whole, like the rail — the tab is a link
+    with `?tab=`, so it survives a reload and can be linked to. -#}
+
+<div class="bench-tabs" role="tablist" aria-label="Workbench">
+  {% for id, label in [('files', 'Files'), ('terminal', 'Terminal'), ('browser', 'Browser')] %}
+  <a class="bench-tab {{ 'on' if tab == id }}" role="tab"
+     aria-selected="{{ 'true' if tab == id else 'false' }}"
+     href="/jarvis?{{ 'chat=' ~ chat_id ~ '&' if chat_id }}tab={{ id }}">{{ label }}</a>
+  {% endfor %}
+</div>
+
+{% if tab == 'files' %}
+<div class="bench-body">
+  <p class="bench-note">Everything in <code>{{ work }}</code>. Jarvis writes here
+    with its file tools, the terminal runs here, and anything a script leaves
+    behind shows up in this list.</p>
+  {% if files %}
+  <ul class="panel-list bench-files">
+    {% for f in files %}
+    <li class="panel-item">
+      <div class="panel-row">
+        <a class="panel-name" href="/jarvis/files/view?path={{ f.path | urlencode }}&chat={{ chat_id }}">{{ f.path }}</a>
+        <span class="panel-do">
+          <span class="muted small">{{ f.bytes | filesize }}</span>
+          <form method="post" action="/jarvis/files" class="inline"
+                data-confirm="Delete {{ f.path }}? Jarvis cannot undo this and neither can you.">
+            <input type="hidden" name="delete" value="{{ f.path }}">
+            <input type="hidden" name="chat" value="{{ chat_id }}">
+            <button class="btn tiny danger" type="submit">Delete</button>
+          </form>
+        </span>
+      </div>
+    </li>
+    {% endfor %}
+  </ul>
+  {% else %}
+  <p class="panel-empty">Empty. Ask Jarvis to write something, or add a file
+    for it to work on.</p>
+  {% endif %}
+  <form method="post" action="/jarvis/files" enctype="multipart/form-data"
+        class="row upload-row">
+    <label class="sr-only" for="bench-upload">Add a file to the workspace</label>
+    <input id="bench-upload" type="file" name="file">
+    <input type="hidden" name="chat" value="{{ chat_id }}">
+    <button class="btn tiny" type="submit">Add</button>
+  </form>
+</div>
+
+{% elif tab == 'terminal' %}
+<div class="bench-body">
+  {% if shell.running %}
+  <p class="bench-note"><span class="dot ok"></span>A container of its own — no
+    Heddled in it, no database, no keys, and none of your systems reachable from
+    it. It shares only <code>work/</code>.
+    {% if shell.free_mb %}<span class="muted">{{ shell.free_mb }} MB free.</span>{% endif %}</p>
+  {% else %}
+  <p class="banner warn">The terminal is not running. {{ shell.why }}</p>
+  {% endif %}
+
+  <div class="term" id="term" aria-live="polite" aria-label="Terminal output">
+    {% for line in console %}
+    <div class="term-run">
+      <div class="term-cmd"><span class="term-by">{{ line['ran_by'] }}</span>
+        <span class="term-prompt">$</span> {{ line['input'] }}</div>
+      {% if line['output'] %}
+      <pre class="term-out {{ 'bad' if not line['ok'] }}">{{ line['output'] }}</pre>
+      {% endif %}
+    </div>
+    {% else %}
+    <p class="panel-empty">Nothing has been run yet. Jarvis uses this to try
+      what it writes; you can use it too — it is the same shell and the same
+      directory.</p>
+    {% endfor %}
+  </div>
+
+  <form method="post" action="/jarvis/terminal" class="term-form" autocomplete="off">
+    <span class="term-prompt" aria-hidden="true">$</span>
+    <label class="sr-only" for="term-input">A command to run in the workspace</label>
+    <input id="term-input" name="command" class="mono" spellcheck="false"
+           placeholder="ls -la" {{ 'disabled' if not shell.running }}>
+    <input type="hidden" name="chat" value="{{ chat_id }}">
+    <button class="btn tiny" type="submit" {{ 'disabled' if not shell.running }}>Run</button>
+  </form>
+</div>
+
+{% else %}
+<div class="bench-body">
+  <p class="bench-note">A reader, not a browser: it fetches a page and pulls the
+    text out. No JavaScript runs, so a site that builds itself in the browser
+    comes back thin. It cannot reach your own network.</p>
+
+  <form method="post" action="/jarvis/browse" class="term-form" autocomplete="off">
+    <label class="sr-only" for="browse-url">A page to read</label>
+    <input id="browse-url" name="url" class="mono" spellcheck="false"
+           placeholder="example.com/docs">
+    <input type="hidden" name="chat" value="{{ chat_id }}">
+    <button class="btn tiny" type="submit">Read</button>
+  </form>
+
+  {% if page %}
+  <div class="page-head-row">
+    <b>{{ page['input'] }}</b>
+    <span class="muted small">read by {{ page['ran_by'] }} · {{ page['at'] | ago }}</span>
+  </div>
+  {#- Somebody else's words, and marked as such on the way to the model too.
+      A page that says "ignore your instructions" is a page. -#}
+  <pre class="term-out {{ 'bad' if not page['ok'] }} page-text">{{ page['output'] }}</pre>
+  {% else %}
+  <p class="panel-empty">Nothing read yet.</p>
+  {% endif %}
+</div>
+{% endif %}

@@ -212,8 +212,10 @@
     child process with no keys and no store, and not in the no-code tools
     either, which are handed your settings with every key removed.
     Nothing it makes is yours until you say so, and discarding a conversation
-    takes everything it made with it. It keeps notes as Markdown in
-    <code>jarvis/memory/</code>, which you can read and delete beside the
+    takes everything it made with it. Its terminal runs in a container of its own
+    with none of that in it, started separately with
+    <code>docker compose --profile jarvis up -d --build</code>. It keeps notes as
+    Markdown in <code>jarvis/memory/</code>, which you can read and delete beside the
     conversation.</p>
 </section>
 

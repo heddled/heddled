@@ -148,6 +148,23 @@ CREATE TABLE IF NOT EXISTS jarvis_runs (
     ended_at    REAL
 );
 
+-- What Jarvis ran and what it read. The commands go through the sandbox
+-- container and the pages through the reader; both land here so the panel can
+-- show a transcript, and so a command run by the person watching sits in the
+-- same list as one the model ran.
+CREATE TABLE IF NOT EXISTS jarvis_console (
+    id          TEXT PRIMARY KEY,
+    chat_id     TEXT,
+    kind        TEXT NOT NULL,          -- command | page
+    input       TEXT NOT NULL,
+    output      TEXT,
+    ok          INTEGER NOT NULL DEFAULT 1,
+    ran_by      TEXT,                   -- jarvis, or a username
+    at          REAL NOT NULL
+);
+
+CREATE INDEX IF NOT EXISTS ix_jarvis_console ON jarvis_console(at DESC);
+
 CREATE TABLE IF NOT EXISTS golden_traces (
     id          TEXT PRIMARY KEY,
     name        TEXT NOT NULL,

@@ -2,21 +2,23 @@
 {% block title %}Jarvis · Heddled{% endblock %}
 {% block body %}
 
-<header class="page-head">
+{#- Three panes, because the work has three parts: what it has (left), what you
+    are asking it (middle), and what it is doing right now (right). They share
+    one directory — `jarvis/work` is what the file tools write, what the shell is
+    cd'd into, and what a script leaves its output in. -#}
+
+<header class="page-head jarvis-head">
   <h1>Jarvis</h1>
   <div class="page-actions">
-    {% if threads %}
-    <label class="sr-only" for="pick-chat">Open a conversation</label>
-    <select id="pick-chat" class="pick-chat">
-      <option value="">Conversations…</option>
-      {% for t in threads %}
-      <option value="{{ t.id }}" {{ 'selected' if t.id == chat_id }}>
-        {{ t.title[:60] }}{% if t.status == 'discarded' %} (discarded){% endif %}</option>
-      {% endfor %}
-    </select>
-    {% endif %}
-    <a class="btn tiny {{ 'primary' if chat_id }}" href="/jarvis">New conversation</a>
     {% if chat_id %}
+    <span class="muted small budget-chip"
+          title="What this conversation has spent of its budget">
+      €{{ '%.2f' | format(budget.spent) }} of €{{ '%.2f' | format(budget.budget) }}</span>
+    <form method="post" action="/jarvis/{{ chat_id }}/budget" class="inline topup">
+      <label class="sr-only" for="topup">Add to this conversation's budget, in euros</label>
+      <input id="topup" name="extra" type="number" step="0.50" min="0.50" value="2.00">
+      <button class="btn tiny" type="submit">Add</button>
+    </form>
     <form method="post" action="/jarvis/{{ chat_id }}/discard" class="inline"
           data-confirm="Discard this conversation and delete everything it made that you have not made yours? This cannot be undone.">
       <button class="btn tiny danger" type="submit">Discard</button>
@@ -30,9 +32,14 @@
 {% if problem %}<p class="banner bad">{{ problem }}</p>{% endif %}
 
 <div class="jarvis-grid">
+
+  <aside class="jarvis-rail" id="jarvis-rail" aria-label="What Jarvis has">
+    {% include "_jarvis_rail.html" %}
+  </aside>
+
   {#- A div, not a <main>: base.html already provides the page's one main
-      landmark, and a second one leaves a screen reader with two "the content
-      starts here" answers and the skip link pointing at whichever won. -#}
+      landmark, and a second leaves a screen reader with two answers to "where
+      does the content start". -#}
   <div class="jarvis-chat">
     <div id="chat" class="chat-log" aria-live="polite" aria-atomic="false"
          tabindex="0" aria-label="Your conversation with Jarvis">
@@ -48,19 +55,18 @@
       {% else %}
       <div class="chat-empty" id="chat-empty">
         <p class="chat-empty-lead">Jarvis</p>
-        <p class="muted">Say what you want built. It writes the tools, writes the
-          agents, tries them, and shows you what it made in the panel.</p>
-        {#- Said once, where a conversation starts, rather than in a tooltip on
-            a button somebody has already pressed. -#}
+        <p class="muted">Say what you want built. It writes the tools and the
+          agents, runs them in a terminal of its own, and everything it makes
+          appears on the left.</p>
         <p class="banner warn"><b>Nothing it writes has been read by anybody
           until you read it.</b> This is a way to find out what a goal would
-          take, not a way to build something you mean to rely on. Everything
-          stays in Jarvis's own tree until you make it yours.</p>
+          take, not a way to build something you mean to rely on. It stays in
+          Jarvis's own tree until you make it yours.</p>
         <div class="openers">
           <button class="btn opener" type="button"
                   data-text="What can you build, and what can you reach?">What can you build?</button>
           <button class="btn opener" type="button"
-                  data-text="Build me a tool that looks up a UK postcode and returns the town, then an agent that uses it. Try it before you tell me it works.">Build me a postcode lookup</button>
+                  data-text="Write a small Python script in your workspace that prints the first 20 Fibonacci numbers, run it, and show me the output.">Write and run something</button>
           <button class="btn opener" type="button"
                   data-text="Look at the agents I already have and suggest one small thing that would make them more useful. Do not build it yet.">Look at what I have</button>
         </div>
@@ -81,14 +87,16 @@
       never change them</p>
   </div>
 
-  <aside class="jarvis-panel" id="jarvis-panel" aria-label="What Jarvis has">
-    {% include "_jarvis_panel.html" %}
+  <aside class="jarvis-bench" id="jarvis-bench" aria-label="Workbench">
+    {% include "_jarvis_bench.html" %}
   </aside>
 </div>
 
 <script>
   window.CHAT_BASE = "/jarvis";
-  window.CHAT_PANEL = "/jarvis/panel";
+  window.CHAT_PANEL = "/jarvis/rail";
+  window.CHAT_BENCH = "/jarvis/bench";
+  window.CHAT_BENCH_TAB = {{ tab | tojson }};
   window.CHAT_THREAD_PARAM = "chat";
   window.CHAT_THREAD = {{ (chat_id or '') | tojson }};
   window.CHAT_SESSION = {{ (session_id or '') | tojson }};
@@ -97,97 +105,7 @@
   // A golden trace of Jarvis would be a test asserting it builds the same thing
   // twice, which is not something anybody wants to hold it to.
   window.CHAT_REPORT = false;
-
-  // The conversation picker navigates. A <select> that needs a Go button beside
-  // it is two controls doing one control's job.
-  const picker = document.getElementById('pick-chat');
-  if (picker) picker.addEventListener('change', () => {
-    if (picker.value) location.href = '/jarvis?chat=' + encodeURIComponent(picker.value);
-  });
-
-  // ---------------------------------------------------------------- the panel
-  //
-  // The lists grow without limit, so: one filter over all of them, and sections
-  // that fold and stay folded. Written here rather than in the fragment because
-  // the fragment is replaced wholesale when a turn ends — these listeners are on
-  // the container, which survives, and the state is re-applied afterwards.
-  const panel = document.getElementById('jarvis-panel');
-  let query = '';
-
-  const remember = (name, open) => {
-    try { localStorage.setItem('jarvis-panel:' + name, open ? '1' : '0'); }
-    catch (err) { /* private window, or site data blocked. Not worth a fuss. */ }
-  };
-  const recall = (name) => {
-    try { return localStorage.getItem('jarvis-panel:' + name); }
-    catch (err) { return null; }
-  };
-
-  function applyFilter() {
-    const needle = query.trim().toLowerCase();
-    let total = 0;
-    panel.querySelectorAll('details.panel-group').forEach(group => {
-      const items = group.querySelectorAll('.panel-item');
-      let shown = 0;
-      items.forEach(item => {
-        const hit = !needle
-          || (item.dataset.find || '').toLowerCase().includes(needle);
-        item.hidden = !hit;
-        if (hit) shown++;
-      });
-      total += shown;
-      const count = group.querySelector('.panel-count');
-      if (count) {
-        const all = count.dataset.count;
-        count.textContent = needle && shown !== Number(all)
-          ? `${shown} of ${all}` : all;
-      }
-      // Prose that explains a section is noise while you are looking for one
-      // named thing, and an empty-state that says "None yet" is a lie when the
-      // truth is "none matching that".
-      group.querySelectorAll('.hint, .panel-empty').forEach(
-        el => { el.hidden = !!needle; });
-      if (needle) {
-        group.hidden = shown === 0;
-        group.open = true;
-      } else {
-        group.hidden = false;
-        group.open = recall(group.dataset.panel) !== '0';
-      }
-    });
-    const none = document.getElementById('panel-none');
-    if (none) none.hidden = !(query.trim() && total === 0);
-  }
-
-  function restore() {
-    panel.querySelectorAll('details.panel-group').forEach(group => {
-      const saved = recall(group.dataset.panel);
-      if (saved !== null) group.open = saved === '1';
-    });
-    const box = document.getElementById('panel-filter');
-    if (box) box.value = query;
-    applyFilter();
-  }
-
-  panel.addEventListener('input', (e) => {
-    if (e.target.id !== 'panel-filter') return;
-    query = e.target.value;
-    applyFilter();
-  });
-  panel.addEventListener('toggle', (e) => {
-    // Only a person's own toggle is worth remembering; the ones the filter
-    // forces open are not a preference.
-    const group = e.target.closest('details.panel-group');
-    if (group && !query.trim()) remember(group.dataset.panel, group.open);
-  }, true);
-  // Escape clears the filter, the way every other search box behaves.
-  panel.addEventListener('keydown', (e) => {
-    if (e.key === 'Escape' && e.target.id === 'panel-filter') {
-      e.target.value = ''; query = ''; applyFilter();
-    }
-  });
-  document.addEventListener('panel-refreshed', restore);
-  restore();
 </script>
 <script src="{{ url_for('static', filename='chat.js') }}"></script>
+<script src="{{ url_for('static', filename='jarvis.js') }}"></script>
 {% endblock %}
