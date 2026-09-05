@@ -29,6 +29,7 @@ import html
 import json
 import os
 import re
+import socket
 import urllib.error
 import urllib.request
 
@@ -40,6 +41,37 @@ MAX_PAGE_CHARS = 20_000
 class ShellUnavailable(RuntimeError):
     """The sandbox is not running. Said plainly, never dressed as a failure of
     the command somebody asked for."""
+
+
+#: The one sentence for "there is no terminal", wherever that is discovered.
+NOT_RUNNING = (
+    "The terminal is not running. Start it from your Heddled folder:\n"
+    "    docker compose --profile jarvis up -d --build")
+
+
+def _looks_absent(exc) -> bool:
+    """Whether this failure means the container is not there.
+
+    A missing container shows up as a DNS failure — the compose network has no
+    `jarvis-sandbox` to resolve — and reporting that verbatim gave somebody
+    `<urlopen error [Errno -2] Name or service not known>`, which names the
+    symptom and hides the cause.
+
+    Tested by exception type, not by matching the message: the first attempt
+    listed the strings resolvers produce and missed on the second machine it
+    met, where the same failure reads `[Errno -5] No address associated with
+    hostname`. `socket.gaierror` covers every spelling of "that name does not
+    resolve". Anything else is passed through, because then the container is
+    there and something else is wrong.
+    """
+    seen = set()
+    while exc is not None and id(exc) not in seen:
+        seen.add(id(exc))
+        if isinstance(exc, (socket.gaierror, ConnectionRefusedError,
+                            ConnectionError, TimeoutError)):
+            return True
+        exc = getattr(exc, "reason", None) or getattr(exc, "__cause__", None)
+    return False
 
 
 def endpoint() -> str:
@@ -56,18 +88,17 @@ def health(timeout_s: float = 2.0) -> dict:
     if not endpoint():
         # "not configured" is true and useless. What somebody needs at this
         # point is the command that fixes it.
-        return {"running": False,
-                "why": "no terminal is configured for this instance — start one "
-                       "with `docker compose --profile jarvis up -d --build`"}
+        return {"running": False, "why": NOT_RUNNING}
     try:
         with urllib.request.urlopen(f"{endpoint()}/health", timeout=timeout_s) as answer:
             body = json.loads(answer.read() or b"{}")
         return {"running": True, "free_mb": body.get("free_mb"),
                 "work": body.get("work")}
-    except Exception:                                          # noqa: BLE001
+    except Exception as exc:                                   # noqa: BLE001
+        if _looks_absent(exc):
+            return {"running": False, "why": NOT_RUNNING}
         return {"running": False,
-                "why": "the sandbox container is not running — start it with "
-                       "`docker compose --profile jarvis up -d --build`"}
+                "why": f"the terminal is there but did not answer: {exc}"}
 
 
 def run_command(command: str, timeout_s: int = DEFAULT_TIMEOUT_S) -> dict:
@@ -77,9 +108,7 @@ def run_command(command: str, timeout_s: int = DEFAULT_TIMEOUT_S) -> dict:
     if not command:
         raise ValueError("Say what to run.")
     if not endpoint():
-        raise ShellUnavailable(
-            "There is no terminal on this instance. Start it with "
-            "`docker compose --profile jarvis up -d --build`.")
+        raise ShellUnavailable(NOT_RUNNING)
 
     payload = json.dumps({"command": command, "timeout_s": timeout_s}).encode()
     request = urllib.request.Request(
@@ -91,9 +120,9 @@ def run_command(command: str, timeout_s: int = DEFAULT_TIMEOUT_S) -> dict:
     except urllib.error.HTTPError as exc:
         raise ShellUnavailable(f"the terminal refused that: {exc.read()[:300]!r}")
     except Exception as exc:                                   # noqa: BLE001
-        raise ShellUnavailable(
-            "could not reach the terminal — it may not be running. Start it "
-            f"with `docker compose --profile jarvis up -d --build`. ({exc})")
+        if _looks_absent(exc):
+            raise ShellUnavailable(NOT_RUNNING)
+        raise ShellUnavailable(f"could not reach the terminal: {exc}")
 
 
 # ------------------------------------------------------------------ reading

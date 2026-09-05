@@ -676,7 +676,7 @@ class TestTheTerminal:
         """Never dressed as a failure of the command somebody asked for."""
         from heddled import jarvis_shell
 
-        with pytest.raises(jarvis_shell.ShellUnavailable, match="no terminal"):
+        with pytest.raises(jarvis_shell.ShellUnavailable, match="not running"):
             jarvis_shell.run_command("echo hi")
 
     def test_an_unreachable_sandbox_is_an_answer_not_a_crash(self, store, monkeypatch):
@@ -684,8 +684,66 @@ class TestTheTerminal:
 
         monkeypatch.setenv("HEDDLED_JARVIS_SANDBOX", "http://127.0.0.1:9")
         assert jarvis_shell.health()["running"] is False
-        with pytest.raises(jarvis_shell.ShellUnavailable, match="could not reach"):
+        with pytest.raises(jarvis_shell.ShellUnavailable, match="not running"):
             jarvis_shell.run_command("echo hi")
+
+    def test_a_name_that_does_not_resolve_reads_as_not_running(self, store, monkeypatch):
+        """The shape a missing container actually takes: compose sets the
+        address whether or not the container exists, so the failure is DNS.
+        Reported verbatim it read `<urlopen error [Errno -2] Name or service
+        not known>`, which names the symptom and hides the cause."""
+        from heddled import jarvis_shell
+
+        monkeypatch.setenv("HEDDLED_JARVIS_SANDBOX", "http://jarvis-sandbox:8080")
+        health = jarvis_shell.health()
+        assert health["running"] is False
+        assert health["why"] == jarvis_shell.NOT_RUNNING
+        assert "Errno" not in health["why"] and "urlopen" not in health["why"]
+        with pytest.raises(jarvis_shell.ShellUnavailable) as raised:
+            jarvis_shell.run_command("echo hi")
+        assert "docker compose --profile jarvis" in str(raised.value)
+        assert "Errno" not in str(raised.value)
+
+    def test_every_way_of_being_absent_gives_the_same_sentence(self, store, monkeypatch):
+        """Unset, unresolvable and refusing are one situation to whoever is
+        reading it: there is no terminal, and here is the command."""
+        from heddled import jarvis_shell
+
+        whys = []
+        for value in (None, "http://jarvis-sandbox:8080", "http://127.0.0.1:9"):
+            if value is None:
+                monkeypatch.delenv("HEDDLED_JARVIS_SANDBOX", raising=False)
+            else:
+                monkeypatch.setenv("HEDDLED_JARVIS_SANDBOX", value)
+            whys.append(jarvis_shell.health()["why"])
+        assert len(set(whys)) == 1 and whys[0] == jarvis_shell.NOT_RUNNING
+
+    def test_a_sandbox_that_answers_badly_is_not_called_missing(self, store, monkeypatch):
+        """The detail is only suppressed when it means "not there". A container
+        that is up and misbehaving should say what it said."""
+        import threading
+        from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
+
+        from heddled import jarvis_shell
+
+        class Broken(BaseHTTPRequestHandler):
+            def do_GET(self):                                 # noqa: N802
+                self.send_response(500); self.end_headers()
+
+            def log_message(self, *a):
+                pass
+
+        server = ThreadingHTTPServer(("127.0.0.1", 0), Broken)
+        threading.Thread(target=server.serve_forever, daemon=True).start()
+        monkeypatch.setenv("HEDDLED_JARVIS_SANDBOX",
+                           f"http://127.0.0.1:{server.server_port}")
+        try:
+            health = jarvis_shell.health()
+        finally:
+            server.shutdown()
+        assert health["running"] is False
+        assert health["why"] != jarvis_shell.NOT_RUNNING
+        assert "did not answer" in health["why"]
 
     def test_it_talks_to_the_sandbox_and_records_what_ran(self, store, chat, monkeypatch):
         """Against a stand-in for the container: what matters here is that the
